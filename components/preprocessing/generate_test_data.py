@@ -7,6 +7,7 @@ Crea 4 archivos CSV con diferentes problemas para testing
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from pathlib import Path
 import random
 
 
@@ -192,22 +193,25 @@ def main():
     
     # 1. Datos con valores nulos
     df1 = generate_sensor_data_with_nulls()
-    df1.to_csv('/home/gsus/Documents/repos/SyntheticDataSuite/components/generation/test_data/sensor_data_with_nulls.csv', index=False)
+    output_dir = Path(__file__).resolve().parent / 'test_data'
+    output_dir.mkdir(exist_ok=True)
+
+    df1.to_csv(output_dir / 'sensor_data_with_nulls.csv', index=False)
     print(f"✓ sensor_data_with_nulls.csv: {df1.shape[0]} filas, {df1.isnull().sum().sum()} valores nulos")
     
     # 2. Datos con outliers
     df2 = generate_financial_data_with_outliers()
-    df2.to_csv('/home/gsus/Documents/repos/SyntheticDataSuite/components/generation/test_data/financial_data_with_outliers.csv', index=False)
+    df2.to_csv(output_dir / 'financial_data_with_outliers.csv', index=False)
     print(f"✓ financial_data_with_outliers.csv: {df2.shape[0]} filas con outliers extremos")
     
     # 3. Datos con timestamps irregulares
     df3 = generate_irregular_timestamp_data()
-    df3.to_csv('/home/gsus/Documents/repos/SyntheticDataSuite/components/generation/test_data/irregular_timestamp_data.csv', index=False)
+    df3.to_csv(output_dir / 'irregular_timestamp_data.csv', index=False)
     print(f"✓ irregular_timestamp_data.csv: {df3.shape[0]} filas con timestamps irregulares")
     
     # 4. Datos con tipos mixtos
     df4 = generate_mixed_data_types()
-    df4.to_csv('/home/gsus/Documents/repos/SyntheticDataSuite/components/generation/test_data/mixed_data_types.csv', index=False)
+    df4.to_csv(output_dir / 'mixed_data_types.csv', index=False)
     print(f"✓ mixed_data_types.csv: {df4.shape[0]} filas con tipos de datos mixtos")
     
     print("\n¡Todos los archivos de prueba generados exitosamente!")
