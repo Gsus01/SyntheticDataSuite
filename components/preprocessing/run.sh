@@ -61,22 +61,9 @@ build_docker() {
 
 # Función para ejecutar tests
 run_tests() {
-    log "Ejecutando tests del preprocesador..."
-    
-    # Verificar dependencias
-    if ! python3 -c "import pandas, numpy, yaml" 2>/dev/null; then
-        error "Dependencias faltantes. Instalando..."
-        pip3 install -r requirements.txt
-    fi
-    
-    # Generar datos de prueba si no existen
-    if [ ! -d "test_data" ] || [ -z "$(ls -A test_data 2>/dev/null)" ]; then
-        log "Generando datos de prueba..."
-        python3 generate_test_data.py
-    fi
-    
-    # Ejecutar tests
-    python3 test_preprocessor.py
+    log "Ejecutando tests dentro de Docker..."
+    docker compose -f ../../docker-compose.yml build test-preprocessing
+    docker compose -f ../../docker-compose.yml run --rm test-preprocessing
 }
 
 # Función para generar datos de prueba

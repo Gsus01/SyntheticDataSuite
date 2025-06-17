@@ -1,127 +1,18 @@
 services:
-  # Servicio principal para preprocesamiento de series temporales
   timeseries-preprocessor:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: ts-preprocessor
     volumes:
-      # Montar datos de entrada y salida
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      # Montar configuración personalizada (opcional)
-      - ./config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    user: "${UID:-1000}:${GID:-1000}"
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/processed_sensor_data.csv"
-    ]
-    
-  # Servicio para testing rápido con docker compose run --rm
-  test-preprocessor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
       - ./test_data:/app/data/input:ro
       - ./output:/app/data/output
       - ./config.yaml:/app/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
-    profiles:
-      - test
-    # Comando por defecto para testing rápido
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/test_processed_data.csv"
-    ]
-  
-  # Servicio para procesar datos de sensores
-  process-sensors:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    user: "${UID:-1000}:${GID:-1000}"
-    profiles:
-      - sensors
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/processed_sensor_data.csv"
-    ]
-  
-  # Servicio para procesar datos financieros
-  process-financial:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    user: "${UID:-1000}:${GID:-1000}"
-    profiles:
-      - financial
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/financial_data_with_outliers.csv",
-      "--output", "/app/data/output/processed_financial_data.csv"
-    ]
-    
-  # Servicio para procesar datos con timestamps irregulares
-  process-irregular:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    user: "${UID:-1000}:${GID:-1000}"
-    profiles:
-      - irregular
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/irregular_timestamp_data.csv",
-      "--output", "/app/data/output/processed_irregular_data.csv"
-    ]
-    
-  # Servicio para procesar datos de tipos mixtos
-  process-mixed:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    user: "${UID:-1000}:${GID:-1000}"
-    profiles:
-      - mixed
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/mixed_data_types.csv",
-      "--output", "/app/data/output/processed_mixed_data.csv"
-    ]
+    command: ["--config", "/app/config.yaml", "--input", "/app/data/input/sensor_data_with_nulls.csv", "--output", "/app/data/output/processed_sensor_data.csv"]
 
-  # Servicio para procesar múltiples archivos en paralelo (batch)
   batch-processor:
     build:
       context: .
@@ -136,8 +27,4 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - batch
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/financial_data_with_outliers.csv",
-      "--output", "/app/data/output/batch_processed_data.csv"
-    ]
+    command: ["--config", "/app/config.yaml", "--input", "/app/data/input/financial_data_with_outliers.csv", "--output", "/app/data/output/batch_processed_data.csv"]

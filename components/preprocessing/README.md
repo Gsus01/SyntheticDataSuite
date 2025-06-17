@@ -80,7 +80,9 @@ docker-compose --profile batch up batch-processor
 # Ejecutar demo completo
 ./run.sh demo
 
-# Ejecutar tests
+# Ejecutar tests (desde la raíz del repositorio)
+docker compose run --rm test-preprocessing
+# O con el script de utilidad
 ./run.sh test
 
 # Procesar archivo específico
@@ -176,8 +178,8 @@ El proyecto incluye tests exhaustivos con 4 archivos de datos de prueba, cada un
 ### Ejecución de Tests
 
 ```bash
-# Tests unitarios e integración
-python test_preprocessor.py
+# Ejecutar tests (desde la raíz del repositorio)
+docker compose run --rm test-preprocessing
 
 # O con el script de utilidad
 ./run.sh test
