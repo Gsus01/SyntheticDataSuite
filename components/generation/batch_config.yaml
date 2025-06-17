@@ -1,0 +1,41 @@
+# Configuración para procesamiento en lote
+# Configuración más agresiva para datos con muchos problemas
+
+logging:
+  level: DEBUG
+
+data:
+  datetime_column: null
+
+preprocessing:
+  # Selección de características más estricta
+  features:
+    # exclude: ["notes", "quality_flag", "sensor_id", "device_id"]
+    
+  # Manejo más agresivo de valores faltantes
+  missing_values:
+    strategy: "drop"
+    threshold: 0.3  # Mantener filas con al menos 30% de datos
+    
+  # Detección agresiva de outliers
+  outliers:
+    enabled: true
+    method: "zscore"
+    threshold: 2.5  # Más estricto que el default
+    action: "remove"
+    
+  # Normalización robusta
+  normalization:
+    enabled: true
+    method: "robust"  # Menos sensible a outliers
+    
+  # Habilitar remuestreo para datos irregulares
+  resampling:
+    enabled: true
+    frequency: "1H"
+    method: "mean"
+    
+  # Ventanas más pequeñas
+  sliding_windows:
+    enabled: true
+    size: 3
