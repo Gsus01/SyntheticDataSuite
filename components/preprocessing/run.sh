@@ -69,22 +69,13 @@ run_tests() {
         pip3 install -r requirements.txt
     fi
     
-    # Generar datos de prueba si no existen
-    if [ ! -d "test_data" ] || [ -z "$(ls -A test_data 2>/dev/null)" ]; then
-        log "Generando datos de prueba..."
-        python3 generate_test_data.py
-    fi
+    # test_data directory should be present and populated in the repo.
     
-    # Ejecutar tests
-    python3 test_preprocessor.py
+    # Ejecutar tests con pytest
+    python3 -m pytest components/preprocessing/tests
 }
 
-# Función para generar datos de prueba
-generate_test_data() {
-    log "Generando datos de prueba..."
-    python3 generate_test_data.py
-    log "Datos de prueba generados en test_data/"
-}
+# generate_test_data function removed as generate_test_data.py is removed
 
 # Función para ejecutar demo
 run_demo() {
@@ -208,7 +199,7 @@ clean_files() {
     log "Limpiando archivos temporales..."
     
     # Limpiar outputs de demo y test
-    rm -rf demo_output/ test_output/ output/
+    rm -rf demo_output/ output/  # test_output/ removed
     
     # Limpiar archivos temporales de Python
     find . -name "*.pyc" -delete
@@ -236,9 +227,7 @@ main() {
         demo)
             run_demo
             ;;
-        generate)
-            generate_test_data
-            ;;
+        # 'generate' command removed
         clean)
             clean_files
             ;;

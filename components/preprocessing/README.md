@@ -5,7 +5,7 @@ Microservicio de preprocesamiento de datos para series temporales, diseñado par
 ## 🚀 Características
 
 - **Preprocesamiento configurable** mediante archivos YAML
-- **Detección automática** de columnas temporales
+- **Detección automática** de columnas temporales (con opción de formato específico)
 - **Manejo de valores faltantes** con múltiples estrategias
 - **Detección y manejo de outliers** (IQR y Z-score)
 - **Normalización de datos** (MinMax, Z-score, Robust)
@@ -13,25 +13,23 @@ Microservicio de preprocesamiento de datos para series temporales, diseñado par
 - **Ventanas deslizantes** para análisis temporal
 - **Selección de características** configurable
 - **Ejecución en Docker** para aislamiento completo
-- **Tests exhaustivos** con datos de prueba
+- **Tests exhaustivos** con pytest (unitarios, integración, caja negra)
 
 ## 📋 Requisitos
 
 - Python 3.11+
 - Docker (opcional, para ejecución aislada)
-- Dependencias: pandas, numpy, PyYAML
+- Dependencias: pandas, numpy, PyYAML, pytest (ver `requirements.txt`)
 
 ## 🛠️ Instalación
 
 ### Opción 1: Ejecución Local
 
 ```bash
-# Instalar dependencias
+# Instalar dependencias (incluye pytest)
 pip install -r requirements.txt
-
-# Generar datos de prueba
-python generate_test_data.py
 ```
+Los datos de prueba necesarios se encuentran en el directorio `test_data/`.
 
 ### Opción 2: Docker
 
@@ -67,7 +65,7 @@ docker run --rm \
 ### Con Docker Compose
 
 ```bash
-# Procesamiento único
+# Procesamiento único (usando el servicio 'timeseries-preprocessor')
 docker-compose up timeseries-preprocessor
 
 # Procesamiento en lote
@@ -80,7 +78,7 @@ docker-compose --profile batch up batch-processor
 # Ejecutar demo completo
 ./run.sh demo
 
-# Ejecutar tests
+# Ejecutar tests (actualizado para pytest)
 ./run.sh test
 
 # Procesar archivo específico
@@ -92,7 +90,7 @@ docker-compose --profile batch up batch-processor
 
 ## ⚙️ Configuración
 
-El procesamiento se configura mediante archivos YAML. Ejemplo de configuración:
+El procesamiento se configura mediante archivos YAML. Ejemplo de configuración (`config.yaml`):
 
 ```yaml
 # Configuración de logging
@@ -102,13 +100,14 @@ logging:
 # Configuración de datos
 data:
   datetime_column: null  # Auto-detección si es null
+  datetime_format: null  # Opcional, ej: "%Y-%m-%d %H:%M:%S" o "%d/%m/%Y %H:%M". Si es null, se intenta auto-detección.
 
 # Pipeline de preprocesamiento
 preprocessing:
   # Selección de características
   features:
-    include: ["timestamp", "value", "sensor_1"]
-    exclude: ["id", "metadata"]
+    # include: ["timestamp", "value", "sensor_1"]
+    # exclude: ["id", "metadata"]
     
   # Manejo de valores faltantes
   missing_values:
@@ -131,7 +130,7 @@ preprocessing:
   # Remuestreo temporal
   resampling:
     enabled: false
-    frequency: "1H"  # "1min", "5min", "1H", "1D"
+    frequency: "h"  # Ej: "1min", "5min", "h" (hora), "D" (día)
     method: "mean"   # "mean", "sum", "first", "last"
     
   # Ventanas deslizantes
@@ -144,45 +143,102 @@ preprocessing:
 ## 📁 Estructura del Proyecto
 
 ```
-components/generation/
+components/preprocessing/
 ├── preprocess.py              # Módulo principal del preprocesador
 ├── config.yaml               # Configuración por defecto
 ├── batch_config.yaml         # Configuración para lote
-├── requirements.txt          # Dependencias Python
+├── requirements.txt          # Dependencias Python (incluye pytest)
 ├── Dockerfile               # Imagen Docker
-├── docker-compose.yml       # Orquestación de contenedores
-├── run.sh                   # Script de utilidad
-├── generate_test_data.py    # Generador de datos de prueba
-├── test_preprocessor.py     # Tests unitarios e integración
-├── test_data/              # Datos de prueba
+├── docker-compose.yml       # Orquestación de contenedores (incluye servicio para black-box tests)
+├── run.sh                   # Script de utilidad (actualizado para pytest)
+├── test_data/               # Datos de prueba para integración y black-box
 │   ├── sensor_data_with_nulls.csv
 │   ├── financial_data_with_outliers.csv
 │   ├── irregular_timestamp_data.csv
 │   └── mixed_data_types.csv
-└── README.md               # Este archivo
+├── tests/                   # Directorio principal de tests
+│   ├── __init__.py
+│   ├── unit/                # Tests Unitarios
+│   │   ├── __init__.py
+│   │   └── test_preprocessor_units.py
+│   ├── integration/         # Tests de Integración
+│   │   ├── __init__.py
+│   │   └── test_preprocessor_integration.py
+│   └── blackbox/            # Tests de Caja Negra (Black-Box)
+│       ├── __init__.py
+│       └── test_container_execution.py
+└── README.md                # Este archivo
 ```
 
 ## 🧪 Tests
 
-El proyecto incluye tests exhaustivos con 4 archivos de datos de prueba, cada uno con problemas específicos:
+El proyecto utiliza `pytest` para un testing exhaustivo por capas, cubriendo tests unitarios, de integración y de caja negra (black-box).
+
+### Estructura de los Tests
+
+- **Tests Unitarios (`tests/unit/`)**: Prueban funciones y métodos individuales de la clase `TimeSeriesPreprocessor` de forma aislada. Se centran en la lógica interna sin depender de I/O de ficheros reales o Docker.
+- **Tests de Integración (`tests/integration/`)**: Verifican que el pipeline completo de preprocesamiento (`process` method) funciona como se espera, incluyendo la lectura de ficheros CSV de prueba (de `test_data/`) y la escritura de resultados. Utilizan configuraciones específicas y la fixture `tmp_path` de pytest para manejar ficheros temporales.
+- **Tests de Caja Negra (`tests/blackbox/`)**: Prueban la imagen Docker construida como una unidad cerrada. Simulan cómo se ejecutaría el servicio en un entorno de producción (ej. Argo Workflows). Utilizan `docker-compose` para ejecutar el contenedor con datos y configuraciones montadas, verificando los ficheros de salida. El servicio `blackbox-test-runner` en `docker-compose.yml` está dedicado a esto.
 
 ### Datos de Prueba
 
-1. **sensor_data_with_nulls.csv**: Datos de sensores IoT con 15% de valores nulos
-2. **financial_data_with_outliers.csv**: Datos financieros con outliers extremos (3%)
-3. **irregular_timestamp_data.csv**: Timestamps irregulares con gaps y duplicados
-4. **mixed_data_types.csv**: Tipos de datos mixtos y formatos inconsistentes
+Los datos de prueba se encuentran en el directorio `test_data/` y son utilizados por los tests de integración y caja negra:
+
+1.  **sensor_data_with_nulls.csv**: Datos de sensores IoT con valores nulos.
+2.  **financial_data_with_outliers.csv**: Datos financieros con outliers extremos.
+3.  **irregular_timestamp_data.csv**: Timestamps irregulares con gaps y formatos mixtos.
+4.  **mixed_data_types.csv**: Tipos de datos mixtos y formatos inconsistentes.
 
 ### Ejecución de Tests
 
+Asegúrate de tener `pytest` instalado (incluido en `requirements.txt`):
 ```bash
-# Tests unitarios e integración
-python test_preprocessor.py
+# Desde components/preprocessing/
+pip install -r requirements.txt
+```
 
-# O con el script de utilidad
+**1. Ejecutar todos los tests:**
+Desde el directorio `components/preprocessing/`:
+```bash
+python3 -m pytest tests/
+```
+O simplemente (si pytest está en el PATH y el entorno reconoce los módulos locales):
+```bash
+pytest tests/
+```
+
+**2. Ejecutar tests de una capa específica:**
+Desde el directorio `components/preprocessing/`:
+```bash
+# Tests Unitarios
+python3 -m pytest tests/unit/
+
+# Tests de Integración
+python3 -m pytest tests/integration/
+
+# Tests de Caja Negra (requieren Docker y Docker Compose v1 o v2)
+# Asegúrate que Docker está corriendo y docker-compose (o docker compose) está en tu PATH
+python3 -m pytest tests/blackbox/
+```
+
+**3. Usar el script de utilidad `run.sh`:**
+El script ha sido actualizado para usar `pytest`.
+```bash
+# Desde components/preprocessing/
 ./run.sh test
+```
 
-# Demo con todos los archivos
+**4. Ver más detalles y logs:**
+Usa las opciones de `pytest` para mayor verbosidad (desde `components/preprocessing/`):
+```bash
+python3 -m pytest -s -v tests/
+```
+Para los tests de caja negra, los logs del contenedor también pueden ser inspeccionados (la salida de `docker compose run` o `docker-compose run` incluye stdout/stderr del contenedor, que son capturados por pytest).
+
+### Demo
+El comando de demo sigue disponible:
+```bash
+# Desde components/preprocessing/
 ./run.sh demo
 ```
 
@@ -191,16 +247,18 @@ python test_preprocessor.py
 ### Dockerfile
 
 El contenedor está optimizado para:
-- **Tamaño mínimo**: Base Python 3.11-slim
-- **Seguridad**: Usuario no-root
-- **Flexibilidad**: Volúmenes montables para datos y configuración
-- **Logging**: Output sin buffer para mejor observabilidad
+- **Tamaño mínimo**: Base Python 3.11-slim.
+- **Seguridad**: Usuario no-root (`preprocessor`).
+- **Flexibilidad**: Volúmenes montables para datos y configuración.
+- **Logging**: Output sin buffer para mejor observabilidad.
+- Incluye `config.yaml` por defecto en `/app/config.yaml`.
 
 ### Docker Compose
 
-Incluye dos servicios:
-- `timeseries-preprocessor`: Procesamiento único
-- `batch-processor`: Procesamiento en lote (profile: batch)
+El fichero `docker-compose.yml` define varios servicios, incluyendo:
+- `timeseries-preprocessor`: Para ejecución única del preprocesador.
+- `batch-processor`: Para procesamiento en lote (activado con `--profile batch`).
+- `blackbox-test-runner`: Servicio base utilizado por los tests de caja negra.
 
 ## 🔧 Integración con Argo Workflows
 
@@ -216,32 +274,42 @@ spec:
   templates:
   - name: preprocess-data
     container:
-      image: timeseries-preprocessor:latest
+      image: timeseries-preprocessor:latest # Asegúrate que esta imagen está disponible en tu registro
       command: ["python", "preprocess.py"]
       args: [
-        "--config", "/config/config.yaml",
+        "--config", "/app/config.yaml", # Puede ser el config.yaml por defecto en la imagen o uno montado
         "--input", "/data/input/raw_data.csv",
         "--output", "/data/output/processed_data.csv"
       ]
       volumeMounts:
-      - name: config
-        mountPath: /config
-      - name: data
-        mountPath: /data
+      - name: config-volume # Opcional: si quieres montar un configMap como config.yaml
+        mountPath: /app/config.yaml # Sobrescribiría el de la imagen
+        subPath: config.yaml # Asumiendo que tu configMap tiene una clave config.yaml
+      - name: data-input-volume
+        mountPath: /data/input # Directorio para datos de entrada
+      - name: data-output-volume
+        mountPath: /data/output # Directorio para datos de salida
   volumes:
-  - name: config
+  - name: config-volume
     configMap:
-      name: preprocessing-config
-  - name: data
+      name: preprocessing-config # Nombre de tu ConfigMap
+  - name: data-input-volume
+    persistentVolumeClaim: # O cualquier otro tipo de volumen
+      claimName: input-data-pvc
+  - name: data-output-volume
     persistentVolumeClaim:
-      claimName: data-pvc
+      claimName: output-data-pvc
 ```
+Asegúrate de que la imagen `timeseries-preprocessor:latest` esté accesible para tu clúster de Argo y que los volúmenes y ConfigMaps estén configurados correctamente.
 
 ## 📊 Funcionalidades de Preprocesamiento
+
+(Esta sección parece estar actualizada y no requiere cambios inmediatos basados en la refactorización de tests)
 
 ### Detección de Columnas Temporales
 - Auto-detección por nombre (date, time, timestamp)
 - Auto-detección por contenido
+- Opción para especificar formato de fecha/tiempo (`data.datetime_format`)
 - Conversión automática a datetime
 - Indexación temporal
 
@@ -275,7 +343,7 @@ El preprocesador incluye manejo robusto de errores:
 - Validación de archivos de entrada
 - Logging detallado de operaciones
 - Manejo de tipos de datos inconsistentes
-- Recuperación de errores de parsing temporal
+- Recuperación de errores de parsing temporal (convierte a NaT y puede eliminar filas)
 
 ## 📈 Logging y Monitoreo
 
@@ -294,7 +362,7 @@ El preprocesador incluye manejo robusto de errores:
 
 ## 📝 Licencia
 
-Este proyecto está bajo la licencia MIT. Ver `LICENSE` para más detalles.
+Este proyecto está bajo la licencia MIT. Ver `LICENSE` para más detalles. (Asumiendo que existe un archivo LICENSE, si no, esta línea podría necesitar ajuste)
 
 ## 🆘 Soporte
 
