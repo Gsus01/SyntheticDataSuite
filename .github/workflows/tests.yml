@@ -1,0 +1,43 @@
+# .github/workflows/tests.yml
+
+name: Preprocessing Component Tests
+
+on:
+  push:
+    branches:
+      - '*'
+  # Ejecutar también cuando se abre o actualiza un Pull Request hacia 'main'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-tests:
+    name: Run Python Tests
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Clonar repositorio en la máquina virtual
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Configurar el entorno de Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      # 3. Instalar dependencias
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          # Instalar las librerías de tu proyecto
+          pip install -r components/preprocessing/requirements.txt
+
+      # 4. Ejecutar los tests con pytest
+      # Excluir tests de blackbox que requieren Docker
+      - name: Run tests with pytest
+        run: |
+          pytest components/preprocessing/tests/ --ignore=components/preprocessing/tests/blackbox/
