@@ -66,17 +66,40 @@ class TimeSeriesPreprocessor:
     def preprocess_datetime(self, df: pd.DataFrame) -> pd.DataFrame:
         """Preprocesa la columna de fecha/tiempo"""
         datetime_col = self.detect_datetime_column(df)
-        
+        datetime_format_string = self.config.get("data", {}).get("datetime_format")
+
         if not datetime_col:
             self.logger.warning("No se encontró columna de fecha/tiempo")
             return df
-            
+
         try:
-            df[datetime_col] = pd.to_datetime(df[datetime_col])
+            if datetime_format_string:
+                self.logger.info(f"Usando formato de fecha/tiempo especificado: {datetime_format_string} para columna {datetime_col}")
+                df[datetime_col] = pd.to_datetime(df[datetime_col], format=datetime_format_string, errors="coerce")
+            else:
+                # Try to automatically parse, coercing errors to NaT.
+                # pandas now uses strict datetime inference by default, so infer_datetime_format is no longer needed
+                # by relying on errors='coerce' and then dropping NaT.
+                self.logger.info(f"Intentando parseo automático de fecha/tiempo para columna {datetime_col}")
+                df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce")
+
+            # Drop rows where the primary datetime column could not be parsed (is NaT)
+            original_rows = len(df)
+            df.dropna(subset=[datetime_col], inplace=True)
+            if len(df) < original_rows:
+                self.logger.warning(f"{original_rows - len(df)} filas eliminadas debido a valores NaT en la columna de fecha/tiempo {datetime_col} después del intento de parseo.")
+
+            if df.empty:
+                self.logger.warning(f"DataFrame vacío después de procesar NaT en columna {datetime_col}. No se puede establecer índice.")
+                return df # Return empty df, can't set index
+
             df = df.set_index(datetime_col).sort_index()
             self.logger.info(f"Columna temporal procesada: {datetime_col}")
+
         except Exception as e:
-            self.logger.error(f"Error procesando columna temporal: {e}")
+            self.logger.error(f"Error procesando columna temporal {datetime_col}: {e}")
+            # Depending on desired robustness, might return df or raise.
+            # Current logic returns df, potentially unprocessed for datetime.
             
         return df
         
@@ -99,7 +122,8 @@ class TimeSeriesPreprocessor:
             elif fill_method == 'backward':
                 df = df.fillna(method='bfill')
             elif fill_method == 'interpolate':
-                df = df.interpolate()
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                df[numeric_cols] = df[numeric_cols].interpolate()
             elif fill_method == 'mean':
                 numeric_cols = df.select_dtypes(include=[np.number]).columns
                 df[numeric_cols] = df[numeric_cols].fillna(df[numeric_cols].mean())
@@ -197,19 +221,29 @@ class TimeSeriesPreprocessor:
             self.logger.warning("No se puede remuestrear: índice no es temporal")
             return df
             
-        frequency = resample_config.get('frequency', '1H')
+        frequency = resample_config.get('frequency', 'h') # Changed '1H' to 'h'
         method = resample_config.get('method', 'mean')
         
+        numeric_cols = df.select_dtypes(include=np.number).columns
+        non_numeric_cols = df.select_dtypes(exclude=np.number).columns
+
         if method == 'mean':
-            df = df.resample(frequency).mean()
+            df_numeric = df[numeric_cols].resample(frequency).mean()
+            df_non_numeric = df[non_numeric_cols].resample(frequency).first()
+            df = pd.concat([df_numeric, df_non_numeric], axis=1)
         elif method == 'sum':
-            df = df.resample(frequency).sum()
+            df_numeric = df[numeric_cols].resample(frequency).sum()
+            df_non_numeric = df[non_numeric_cols].resample(frequency).first()
+            df = pd.concat([df_numeric, df_non_numeric], axis=1)
         elif method == 'first':
             df = df.resample(frequency).first()
         elif method == 'last':
             df = df.resample(frequency).last()
+        # TODO: Consider how to handle cases where all columns are numeric or non-numeric to avoid empty DFs in concat
+        # For now, this handles mixed types. If one group is empty, concat might behave unexpectedly or error.
+        # A better approach for concat might be selective if len(numeric_cols) > 0 and len(non_numeric_cols) > 0.
             
-        self.logger.info(f"Datos remuestreados a frecuencia: {frequency}")
+        self.logger.info(f"Datos remuestreados a frecuencia: {frequency}, método: {method}")
         return df
         
     def create_sliding_windows(self, df: pd.DataFrame) -> pd.DataFrame:

@@ -141,3 +141,27 @@ services:
       "--input", "/app/data/input/financial_data_with_outliers.csv",
       "--output", "/app/data/output/batch_processed_data.csv"
     ]
+
+  # Service for Black-Box testing
+  # This service is intentionally minimal; command and specific
+  # output/custom_config volumes are specified in the 'docker compose run' call
+  # from the test script (test_container_execution.py)
+  blackbox-test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    user: "${UID:-1000}:${GID:-1000}"
+    # Standard mount for input test data
+    # ./test_data on host maps to /app/data/input in container
+    # Standard mount for default config
+    # ./config.yaml on host maps to /app/config.yaml in container
+    # Note: The test scripts will dynamically add mounts for output directories
+    # and custom configuration files using 'docker compose run -v ...'
+    volumes:
+      - ./test_data:/app/data/input:ro
+      - ./config.yaml:/app/config.yaml:ro
+      # The test_container_execution.py script will add:
+      # -v <host_temp_output_dir>:/app/data/output
+      # -v <host_temp_custom_config_dir>:/app/custom_config_vol (for custom config tests)
