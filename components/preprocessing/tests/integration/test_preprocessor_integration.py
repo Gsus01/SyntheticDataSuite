@@ -5,7 +5,8 @@ import yaml
 from pathlib import Path
 import shutil
 
-from components.preprocessing.preprocess import TimeSeriesPreprocessor, load_config
+# from components.preprocessing.preprocess import TimeSeriesPreprocessor, load_config
+from preprocess import TimeSeriesPreprocessor, load_config
 
 # Define the paths relative to this file or project root
 BASE_DIR = Path(__file__).resolve().parent.parent.parent # Should be components/preprocessing

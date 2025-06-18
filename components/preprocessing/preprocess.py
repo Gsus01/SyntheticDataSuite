@@ -78,10 +78,10 @@ class TimeSeriesPreprocessor:
                 df[datetime_col] = pd.to_datetime(df[datetime_col], format=datetime_format_string, errors="coerce")
             else:
                 # Try to automatically parse, coercing errors to NaT.
-                # The previous nested try-except for infer_datetime_format and dayfirst can be simplified
+                # pandas now uses strict datetime inference by default, so infer_datetime_format is no longer needed
                 # by relying on errors='coerce' and then dropping NaT.
                 self.logger.info(f"Intentando parseo automático de fecha/tiempo para columna {datetime_col}")
-                df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce", infer_datetime_format=True)
+                df[datetime_col] = pd.to_datetime(df[datetime_col], errors="coerce")
 
             # Drop rows where the primary datetime column could not be parsed (is NaT)
             original_rows = len(df)

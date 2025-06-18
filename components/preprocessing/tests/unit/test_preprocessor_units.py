@@ -9,7 +9,8 @@ from pathlib import Path
 # Assuming preprocess.py is in components/preprocessing/
 # and this test file is in components/preprocessing/tests/unit/
 # Adjust import if preprocess.py is moved to a 'microservice' subfolder later
-from components.preprocessing.preprocess import TimeSeriesPreprocessor, load_config
+# from components.preprocessing.preprocess import TimeSeriesPreprocessor, load_config
+from preprocess import TimeSeriesPreprocessor, load_config
 
 @pytest.fixture
 def base_config():

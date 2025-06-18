@@ -60,7 +60,7 @@ def test_container_process_sensor_data(build_docker_image, host_output_dir):
     if host_output_file.exists():
         os.remove(host_output_file)
 
-    # Command to run the preprocessor service via docker-compose
+    # Command to run the preprocessor service via docker compose (V2)
     # Paths for --config, --input, --output are INSIDE the container
     # The service 'blackbox-test-runner' needs to be defined in docker-compose.yml
     # and configured to mount:
@@ -68,10 +68,9 @@ def test_container_process_sensor_data(build_docker_image, host_output_dir):
     #   - TEST_DATA_HOST_DIR to CONTAINER_INPUT_DIR
     #   - host_output_dir to CONTAINER_OUTPUT_DIR
     command = [
-        "docker-compose", "-f", str(DOCKER_COMPOSE_PATH), "run", "--rm",
-        # "--service-ports", # Remove if not needed, typically for long-running services
-        "blackbox-test-runner", # This service needs to be defined in docker-compose.yml
+        "docker", "compose", "-f", str(DOCKER_COMPOSE_PATH), "run", "--rm",
         "-v", f"{str(host_output_dir)}:{str(CONTAINER_OUTPUT_DIR)}",
+        "blackbox-test-runner",
         "--config", str(CONTAINER_CONFIG_FILE),
         "--input", str(CONTAINER_INPUT_DIR / input_csv_filename),
         "--output", str(CONTAINER_OUTPUT_DIR / output_csv_filename)
@@ -108,7 +107,7 @@ def test_container_custom_config_resample(build_docker_image, host_output_dir, t
 
     custom_config_data = {
         'logging': {'level': 'INFO'},
-        'data': {'datetime_column': 'timestamp'}, # Explicitly set
+        'data': {'datetime_column': 'time'}, # Correctly set to 'time'
         'preprocessing': {
             'resampling': {'enabled': True, 'frequency': 'D', 'method': 'sum'}, # Daily sum
             'missing_values': {'strategy': 'drop'}, # Different from default
@@ -130,10 +129,10 @@ def test_container_custom_config_resample(build_docker_image, host_output_dir, t
     container_custom_config_vol_str = str(Path("/app/custom_config_vol"))
 
     command = [
-        "docker-compose", "-f", str(DOCKER_COMPOSE_PATH), "run", "--rm",
-        "blackbox-test-runner", # This service needs to define a mount for custom_config_host_dir
+        "docker", "compose", "-f", str(DOCKER_COMPOSE_PATH), "run", "--rm",
         "-v", f"{str(host_output_dir)}:{str(CONTAINER_OUTPUT_DIR)}",
         "-v", f"{str(custom_config_host_path.parent)}:{container_custom_config_vol_str}",
+        "blackbox-test-runner",
         "--config", str(container_custom_config_path),
         "--input", str(CONTAINER_INPUT_DIR / input_csv_filename),
         "--output", str(CONTAINER_OUTPUT_DIR / output_csv_filename)
@@ -153,4 +152,5 @@ def test_container_custom_config_resample(build_docker_image, host_output_dir, t
     # Check if resampling to daily was applied - expect fewer rows than original, unique dates
     original_df = pd.read_csv(TEST_DATA_HOST_DIR / input_csv_filename)
     assert len(result_df) < len(original_df)
-    assert pd.to_datetime(result_df['timestamp']).dt.normalize().nunique() == len(result_df)
+    # Use 'time' column instead of 'timestamp' since that's the actual column name
+    assert pd.to_datetime(result_df['time']).dt.normalize().nunique() == len(result_df)
