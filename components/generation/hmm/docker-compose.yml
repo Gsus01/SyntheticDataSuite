@@ -1,0 +1,19 @@
+
+services:
+  generar:
+    build: .
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./modelo:/app/modelo
+      - ./datos_sinteticos:/app/datos_sinteticos
+      - ./variables.json:/app/variables.json
+    # Define el comando COMPLETO con el script y sus argumentos por defecto
+    command:
+      #- /app/generar_datos.py
+      - --model
+      - /app/modelo/modelo_entrenado.pkl
+      - --output_data
+      - /app/datos_sinteticos/series_generadas.csv
+      - --params
+      - /app/variables.json
