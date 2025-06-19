@@ -1,0 +1,16 @@
+services:
+  entrenar:
+    build: .
+    volumes:
+      - ./datos:/app/datos
+      - ./modelo:/app/modelo
+      - ./variables.json:/app/variables.json
+    # Define el comando COMPLETO con el script y sus argumentos por defecto
+    command:
+      #- /app/entrenar_modelo.py
+      - --input
+      - /app/datos/Battery_RUL.csv
+      - --output_model
+      - /app/modelo/modelo_entrenado.pkl
+      - --params
+      - /app/variables.json

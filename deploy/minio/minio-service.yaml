@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio # Este es el nombre que se usará en el DNS: <name>.<namespace>.svc
+  namespace: minio-dev
+spec:
+  # El selector busca pods que tengan esta etiqueta
+  selector:
+    app: minio
+  ports:
+    - name: api
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+    - name: console
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
