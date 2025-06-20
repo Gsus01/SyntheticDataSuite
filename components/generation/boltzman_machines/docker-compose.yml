@@ -1,0 +1,16 @@
+services:
+  generar:
+    build: .
+    volumes:
+      - ./data_synth:/app/data_synth
+      - ./model:/app/modell
+      - ./variables.json:/app/variables.json
+    # Define el comando COMPLETO con el script y sus argumentos por defecto
+    command:
+      #- /app/entrenar_modelo.py
+      - --model_path
+      - /app/model/modelo_entrenado.pkl
+      - --output_path
+      - /app/data_synth/data_generated.csv
+      - --config
+      - /app/variables.json

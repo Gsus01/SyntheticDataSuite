@@ -1,0 +1,10 @@
+{
+  "columns_to_use": [
+    "Max. Voltage Dischar. (V)",
+    "Min. Voltage Charg. (V)",
+    "Time at 4.15V (s)"
+  ],
+  "n_components": 50,
+  "learning_rate": 0.01,
+  "n_iter": 20
+}
