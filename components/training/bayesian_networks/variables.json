@@ -1,0 +1,8 @@
+{
+  "input_file_path": "data/my_time_series_data.csv",
+  "output_model_path": "models/bayesian_time_series_model.joblib",
+  "id_column_name": "ID",
+  "index_column_name": "Cycle_Index",
+  "discretization_quantiles": 4,
+  "unique_values_threshold": 7
+}
