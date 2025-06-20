@@ -1,0 +1,18 @@
+services:
+  generar:
+    build: .
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+      - ./model:/app/model
+      - ./variables.json:/app/variables.json
+    # Define el comando COMPLETO con el script y sus argumentos por defecto
+    command:
+      #- /app/entrenar_modelo.py
+      - --model_path
+      - /app/model/trained_model.joblib
+      - --output_path
+      - /app/datos_sinteticos/series_generadas.csv
+      - --config
+      - /app/variables.json
