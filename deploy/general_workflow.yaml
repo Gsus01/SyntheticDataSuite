@@ -1,0 +1,297 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: generation-workflow-
+spec:
+  archiveLogs: true
+  entrypoint: full-pipeline
+  serviceAccountName: default
+
+# -------------------------------------------------------------
+  templates:
+  - name: full-pipeline
+    dag:
+      tasks:
+      # Preprocessing phase
+      - name: preprocessing
+        template: preprocessing
+      
+      # HMM training phase
+      - name: train-hmm-model
+        dependencies: [preprocessing]
+        template: train-hmm-model
+        arguments:
+          artifacts:
+          - name: processed-data
+            from: "{{tasks.preprocessing.outputs.artifacts.processed-data}}"
+      
+      # HMM generation phase
+      - name: generate-hmm-data
+        dependencies: [train-hmm-model]
+        template: generate-hmm-data
+        arguments:
+          artifacts:
+          - name: trained-model
+            from: "{{tasks.train-hmm-model.outputs.artifacts.trained-model}}"
+
+# -------------------------------------------------------------
+
+  - name: preprocessing
+    container:
+      image: docker.io/library/preprocessing:v2
+      imagePullPolicy: Never
+      command: [python, preprocess.py]
+      args: [
+        "--config", "/app/config.yaml",
+        "--input", "/app/data/Battery_RUL.csv", 
+        "--output", "/tmp/output/processed_data.csv"
+      ]
+    outputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: train-hmm-model
+    container:
+      image: docker.io/library/training-hmm:v2
+      imagePullPolicy: Never
+      command: [python, entrenar_modelo.py]
+      args: [
+        "--data", "/tmp/input/processed_data.csv",
+        "--output_model", "/tmp/output/hmm_model.pkl",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: generate-hmm-data
+    container:
+      image: docker.io/library/generation-hmm:v2
+      imagePullPolicy: Never
+      command: [python, generar_datos.py]
+      args: [
+        "--model", "/tmp/input/hmm_model.pkl",
+        "--output_data", "/tmp/output/synthetic_data.csv",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: synthetic-data
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: train-gaussian-process-model
+    container:
+      image: docker.io/library/training-gaussian_process:v2
+      imagePullPolicy: Never
+      args: [
+        "--data", "/tmp/input/processed_data.csv",
+        "--output_model", "/tmp/output/gp_model.pkl",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: generate-gaussian-process-data
+    container:
+      image: docker.io/library/generation-gaussian_process:v2
+      imagePullPolicy: Never
+      args: [
+        "--model", "/tmp/input/gp_model.pkl",
+        "--output_data", "/tmp/output/synthetic_data.csv",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: synthetic-data
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: train-copulas-model
+    container:
+      image: docker.io/library/training-copulas:v2
+      imagePullPolicy: Never
+      args: [
+        "--data", "/tmp/input/processed_data.csv",
+        "--output_model", "/tmp/output/copulas_model.pkl",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: generate-copulas-data
+    container:
+      image: docker.io/library/generation-copulas:v2
+      imagePullPolicy: Never
+      args: [
+        "--model", "/tmp/input/copulas_model.pkl",
+        "--output_data", "/tmp/output/synthetic_data.csv",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: synthetic-data
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: train-boltzman-machines-model
+    container:
+      image: docker.io/library/training-boltzman_machines:v2
+      imagePullPolicy: Never
+      args: [
+        "--data", "/tmp/input/processed_data.csv",
+        "--output_model", "/tmp/output/rbm_model.pkl",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: generate-boltzman-machines-data
+    container:
+      image: docker.io/library/generation-boltzman_machines:v2
+      imagePullPolicy: Never
+      args: [
+        "--model", "/tmp/input/rbm_model.pkl",
+        "--output_data", "/tmp/output/synthetic_data.csv",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: synthetic-data
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: train-bayesian-networks-model
+    container:
+      image: docker.io/library/training-bayesian_networks:v2
+      imagePullPolicy: Never
+      args: [
+        "--data", "/tmp/input/processed_data.csv",
+        "--output_model", "/tmp/output/bn_model.pkl",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/output
+        archive:
+          none: {}
+
+# -------------------------------------------------------------
+
+  - name: generate-bayesian-networks-data
+    container:
+      image: docker.io/library/generation-bayesian_networks:v2
+      imagePullPolicy: Never
+      args: [
+        "--model", "/tmp/input/bn_model.pkl",
+        "--output_data", "/tmp/output/synthetic_data.csv",
+        "--params", "/app/variables.json"
+      ]
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input
+        archive:
+          none: {}
+    outputs:
+      artifacts:
+      - name: synthetic-data
+        path: /tmp/output
+        archive:
+          none: {}
+

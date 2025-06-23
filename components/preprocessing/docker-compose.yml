@@ -19,6 +19,26 @@ services:
       "--input", "/app/data/input/sensor_data_with_nulls.csv",
       "--output", "/app/data/output/processed_sensor_data.csv"
     ]
+
+  rul-batteries-preprocessor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rb-preprocessor
+    volumes:
+      # Montar datos de entrada y salida
+      - ./test_data:/app/data/input:ro
+      - ./output:/app/data/output
+      # Montar configuración personalizada (opcional)
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    user: "${UID:-1000}:${GID:-1000}"
+    command: [
+      "--config", "/app/config.yaml",
+      "--input", "/app/data/input/Battery_RUL.csv",
+      "--output", "/app/data/output/processed_sensor_data.csv"
+    ]
     
   # Servicio para testing rápido con docker compose run --rm
   test-preprocessor:

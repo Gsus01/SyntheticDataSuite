@@ -44,6 +44,26 @@ kubectl apply -f deploy/argo/argo-workflow-role.yaml
 kubectl apply -f deploy/argo/argo-workflow-rolebinding.yaml
 ```
 
+#### 2.3. Ajuste del Modo de Autenticación para el desarrollo en local
+
+Por defecto, la interfaz de Argo Workflows requiere un token de autenticación para iniciar sesión. Para un entorno de desarrollo local como este, podemos cambiar el modo de autenticación a server para desactivar esta pantalla de login y acceder directamente.
+
+Aplica este parche para modificar la configuración del servidor de Argo:
+
+```bash
+kubectl -n argo patch deployment argo-server --type=json -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--auth-mode=server"}]'
+```
+Este comando hará que el Pod de argo-server se reinicie automáticamente con la nueva configuración. Puedes esperar a que el proceso termine con el siguiente comando:
+
+```bash
+kubectl -n argo rollout status deployment/argo-server
+```
+
+Luego tienes que conseguir el token de acceso:
+```bash
+kubectl -n argo create token argo-server
+```
+
 ### 3. Conexión de Argo con MinIO
 Finalmente, configuramos Argo para que sepa dónde encontrar y cómo autenticarse con nuestro servidor MinIO.
 
@@ -81,3 +101,47 @@ Con todo configurado, ya puedes empezar a lanzar workflows.
     kubectl -n minio-dev port-forward pod/minio 9090:9090 9000:9000
     ```
     Puedes acceder a la consola en `http://localhost:9090`. Los artefactos de tus workflows aparecerán en el bucket `argo-artifacts`.
+
+### 5. Ejecutar el Workflow de Prueba HMM
+
+Una vez que tengas todo configurado, puedes probar el workflow de generación de datos sintéticos con HMM:
+
+```bash
+# Ejecutar el workflow simplificado (solo HMM)
+argo submit deploy/general_workflow.yaml
+
+# Ejecutar con logs en tiempo real
+argo submit deploy/general_workflow.yaml --log
+
+# Ver el estado de los workflows
+argo list
+
+# Ver detalles del workflow
+argo get <workflow-name>
+```
+
+**Nota**: Este workflow utiliza archivos de ejemplo incluidos en las imágenes Docker. Para usar tus propios datos, puedes subirlos a MinIO usando la consola web (http://localhost:9090) con credenciales `minioadmin:minioadmin`.
+
+### 6. Troubleshooting Común
+
+#### Verificar que MinIO esté funcionando:
+```bash
+kubectl -n minio-dev get pods
+kubectl -n minio-dev logs minio
+```
+
+#### Verificar que Argo esté funcionando:
+```bash
+kubectl -n argo get pods
+kubectl -n argo logs deployment/argo-server
+```
+
+#### Si el workflow falla:
+```bash
+# Ver logs detallados del workflow
+argo logs <workflow-name>
+
+# Ver logs de un paso específico
+argo logs <workflow-name> -c preprocessing
+argo logs <workflow-name> -c train-hmm-model
+```
