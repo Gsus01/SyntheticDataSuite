@@ -58,6 +58,11 @@ spec:
       artifacts:
       - name: source-data
         path: /tmp/input/data.csv
+
+    securityContext:
+      runAsUser: 0
+      runAsGroup: 0
+
     container:
       image: docker.io/library/preprocessing:v2
       imagePullPolicy: Never

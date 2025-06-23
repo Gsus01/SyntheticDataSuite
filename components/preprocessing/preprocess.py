@@ -20,8 +20,7 @@ class TimeSeriesPreprocessor:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        
-
+        self.logger = logging.getLogger(self.__class__.__name__)
         
     def load_data(self, input_path: str) -> pd.DataFrame:
         """Carga los datos del archivo CSV"""
