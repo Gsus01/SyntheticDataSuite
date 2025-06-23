@@ -1,0 +1,18 @@
+services:
+  entrenar:
+    build: .
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+      - ./model:/app/model
+      - ./variables.json:/app/variables.json
+    # Define el comando COMPLETO con el script y sus argumentos por defecto
+    command:
+      #- /app/entrenar_modelo.py
+      - --input_path
+      - /app/data/battery_RUL_with_ID.csv
+      - --output_path
+      - /app/model/trained_model.joblib
+      - --config
+      - /app/variables.json
