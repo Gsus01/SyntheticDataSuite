@@ -7,14 +7,31 @@ spec:
   entrypoint: full-pipeline
   serviceAccountName: default
 
+  arguments:
+    parameters:
+    - name: input-file-key
+      value: "datasets/Battery_RUL.csv"
+
 # -------------------------------------------------------------
   templates:
   - name: full-pipeline
+    inputs:
+      artifacts:
+      - name: source-data
+        s3:
+
+          bucket: argo-artifacts
+          key: "{{workflow.parameters.input-file-key}}"
+
     dag:
       tasks:
       # Preprocessing phase
       - name: preprocessing
         template: preprocessing
+        arguments:
+          artifacts:
+          - name: source-data # El nombre debe coincidir con el input de la plantilla 'preprocessing'
+            from: "{{inputs.artifacts.source-data}}"
       
       # HMM training phase
       - name: train-hmm-model
@@ -37,19 +54,23 @@ spec:
 # -------------------------------------------------------------
 
   - name: preprocessing
+    inputs:
+      artifacts:
+      - name: source-data
+        path: /tmp/input/data.csv
     container:
       image: docker.io/library/preprocessing:v2
       imagePullPolicy: Never
       command: [python, preprocess.py]
       args: [
         "--config", "/app/config.yaml",
-        "--input", "/app/data/Battery_RUL.csv", 
+        "--input", "{{inputs.artifacts.source-data.path}}", 
         "--output", "/tmp/output/processed_data.csv"
       ]
     outputs:
       artifacts:
       - name: processed-data
-        path: /tmp/output
+        path: /tmp/output/processed_data.csv 
         archive:
           none: {}
 

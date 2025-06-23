@@ -20,16 +20,8 @@ class TimeSeriesPreprocessor:
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.setup_logging()
         
-    def setup_logging(self):
-        """Configura el logging del sistema"""
-        log_level = self.config.get('logging', {}).get('level', 'INFO')
-        logging.basicConfig(
-            level=getattr(logging, log_level),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        self.logger = logging.getLogger(__name__)
+
         
     def load_data(self, input_path: str) -> pd.DataFrame:
         """Carga los datos del archivo CSV"""
@@ -306,6 +298,13 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
 
 def main():
+
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stdout,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
     """Función principal"""
     parser = argparse.ArgumentParser(description='Preprocesador de series temporales')
     parser.add_argument('--config', required=True, help='Archivo de configuración YAML')
@@ -316,11 +315,11 @@ def main():
     
     # Validar archivos
     if not Path(args.config).exists():
-        print(f"Error: Archivo de configuración no encontrado: {args.config}")
+        logging.critical(f"Error: Archivo de configuración no encontrado: {args.config}")
         sys.exit(1)
         
     if not Path(args.input).exists():
-        print(f"Error: Archivo de entrada no encontrado: {args.input}")
+        logging.critical(f"Error: Archivo de entrada no encontrado en el pod: {args.input}")
         sys.exit(1)
         
     # Crear directorio de salida si no existe
