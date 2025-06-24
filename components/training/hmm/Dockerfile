@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.12-slim
 
 
 # Docker cacheará esta capa si requirements.txt no cambia

@@ -56,6 +56,12 @@ def main():
     )
     model.fit(data)
 
+    # Crear el directorio de salida si no existe
+    output_dir = os.path.dirname(args.output_model)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        logging.info(f"Directorio creado: {output_dir}")
+
     joblib.dump(model, args.output_model)
     logging.info(f"Modelo guardado en {args.output_model}")
 
