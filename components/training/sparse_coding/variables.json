@@ -1,0 +1,8 @@
+{
+  "id_column": "ID",
+  "time_column": "Cycle_Index",
+  "target_columns": ["Max. Voltage Dischar. (V)","Min. Voltage Charg. (V)","Time at 4.15V (s)"],
+  "n_components": 50,
+  "alpha": 1.0,
+  "max_iter": 300
+}
