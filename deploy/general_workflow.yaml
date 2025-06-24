@@ -11,6 +11,12 @@ spec:
     parameters:
     - name: input-file-key
       value: "datasets/Battery_RUL.csv"
+    - name: preprocessing-config-key
+      value: "config/preprocessing.yaml"
+    - name: training-hmm-config-key
+      value: "config/training_hmm.json"
+    - name: generation-hmm-config-key
+      value: "config/generation_hmm.json"
 
 # -------------------------------------------------------------
   templates:
@@ -19,9 +25,20 @@ spec:
       artifacts:
       - name: source-data
         s3:
-
           bucket: argo-artifacts
           key: "{{workflow.parameters.input-file-key}}"
+      - name: preprocessing-config
+        s3:
+          bucket: argo-artifacts
+          key: "{{workflow.parameters.preprocessing-config-key}}"
+      - name: training-hmm-config
+        s3:
+          bucket: argo-artifacts
+          key: "{{workflow.parameters.training-hmm-config-key}}"
+      - name: generation-hmm-config
+        s3:
+          bucket: argo-artifacts
+          key: "{{workflow.parameters.generation-hmm-config-key}}"
 
     dag:
       tasks:
@@ -32,6 +49,8 @@ spec:
           artifacts:
           - name: source-data # El nombre debe coincidir con el input de la plantilla 'preprocessing'
             from: "{{inputs.artifacts.source-data}}"
+          - name: preprocessing-config
+            from: "{{inputs.artifacts.preprocessing-config}}"
       
       # HMM training phase
       - name: train-hmm-model
@@ -41,6 +60,8 @@ spec:
           artifacts:
           - name: processed-data
             from: "{{tasks.preprocessing.outputs.artifacts.processed-data}}"
+          - name: training-hmm-config
+            from: "{{inputs.artifacts.training-hmm-config}}"
       
       # HMM generation phase
       - name: generate-hmm-data
@@ -50,6 +71,8 @@ spec:
           artifacts:
           - name: trained-model
             from: "{{tasks.train-hmm-model.outputs.artifacts.trained-model}}"
+          - name: generation-hmm-config
+            from: "{{inputs.artifacts.generation-hmm-config}}"
 
 # -------------------------------------------------------------
 
@@ -58,6 +81,8 @@ spec:
       artifacts:
       - name: source-data
         path: /tmp/input/data.csv
+      - name: preprocessing-config
+        path: /tmp/config/preprocessing.yaml
 
     securityContext:
       runAsUser: 0
@@ -68,7 +93,7 @@ spec:
       imagePullPolicy: Never
       command: [python, preprocess.py]
       args: [
-        "--config", "/app/config.yaml",
+        "--config", "{{inputs.artifacts.preprocessing-config.path}}",
         "--input", "{{inputs.artifacts.source-data.path}}", 
         "--output", "/tmp/output/processed_data.csv"
       ]
@@ -82,31 +107,41 @@ spec:
 # -------------------------------------------------------------
 
   - name: train-hmm-model
+    inputs:
+      artifacts:
+      - name: processed-data
+        path: /tmp/input/processed_data.csv
+        archive:
+          none: {}
+      - name: training-hmm-config
+        path: /tmp/config/training_hmm.json
     container:
       image: docker.io/library/training-hmm:v2
       imagePullPolicy: Never
       command: [python, entrenar_modelo.py]
       args: [
-        "--data", "/tmp/input/processed_data.csv",
+        "--input", "/tmp/input/processed_data.csv",
         "--output_model", "/tmp/output/hmm_model.pkl",
-        "--params", "/app/variables.json"
+        "--params", "{{inputs.artifacts.training-hmm-config.path}}"
       ]
-    inputs:
-      artifacts:
-      - name: processed-data
-        path: /tmp/input
-        archive:
-          none: {}
     outputs:
       artifacts:
       - name: trained-model
-        path: /tmp/output
+        path: /tmp/output/hmm_model.pkl
         archive:
           none: {}
 
 # -------------------------------------------------------------
 
   - name: generate-hmm-data
+    inputs:
+      artifacts:
+      - name: trained-model
+        path: /tmp/input/hmm_model.pkl
+        archive:
+          none: {}
+      - name: generation-hmm-config
+        path: /tmp/config/generation_hmm.json
     container:
       image: docker.io/library/generation-hmm:v2
       imagePullPolicy: Never
@@ -114,18 +149,12 @@ spec:
       args: [
         "--model", "/tmp/input/hmm_model.pkl",
         "--output_data", "/tmp/output/synthetic_data.csv",
-        "--params", "/app/variables.json"
+        "--params", "{{inputs.artifacts.generation-hmm-config.path}}"
       ]
-    inputs:
-      artifacts:
-      - name: trained-model
-        path: /tmp/input
-        archive:
-          none: {}
     outputs:
       artifacts:
       - name: synthetic-data
-        path: /tmp/output
+        path: /tmp/output/synthetic_data.csv
         archive:
           none: {}
 

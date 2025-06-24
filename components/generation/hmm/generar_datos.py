@@ -42,6 +42,13 @@ def main():
         synthetic.reshape(-1, synthetic.shape[-1]),
         columns=[f"feature_{i}" for i in range(synthetic.shape[-1])]
     )
+    
+    # Crear el directorio de salida si no existe
+    output_dir = os.path.dirname(args.output_data)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        logging.info(f"Directorio creado: {output_dir}")
+    
     df_out.to_csv(args.output_data, index=False)
     logging.info(f"Datos sintéticos guardados en {args.output_data}")
 

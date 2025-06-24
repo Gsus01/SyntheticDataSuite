@@ -108,10 +108,10 @@ Una vez que tengas todo configurado, puedes probar el workflow de generación de
 
 ```bash
 # Ejecutar el workflow simplificado (solo HMM)
-argo submit deploy/general_workflow.yaml
+argo submit deploy/general_workflow.yaml -n argo
 
 # Ejecutar con logs en tiempo real
-argo submit deploy/general_workflow.yaml --log
+argo submit deploy/general_workflow.yaml --log -n argo
 
 # Ver el estado de los workflows
 argo list
