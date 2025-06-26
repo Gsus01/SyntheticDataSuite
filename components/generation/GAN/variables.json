@@ -1,0 +1,8 @@
+{
+  "n_series": 10,
+  "series_length": 100,
+  "start_id": 100,
+  "target_columns": ["Max. Voltage Dischar. (V)","Min. Voltage Charg. (V)","Time at 4.15V (s)"],
+  "seq_len": 50,  
+  "feature_dim": 3
+}

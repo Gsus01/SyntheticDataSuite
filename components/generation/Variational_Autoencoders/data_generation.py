@@ -160,12 +160,11 @@ def main():
 
     logging.info(f"Generando {config['n_series']} series de longitud {config['series_length']}...")
     
-    # AQUI ESTA LA MODIFICACION: Cambiar 'sample' por 'generate'
-    # y pasar solo los argumentos que 'generate' espera
+
     df_synthetic = vae_model.generate(
         n_series=config["n_series"],
         seq_len=config["series_length"]
-        # 'start_id' no es un argumento de 'generate', se configura en el __init__ del modelo
+        
     )
 
     output_path = Path(args.output_path)
