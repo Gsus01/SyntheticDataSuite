@@ -1,0 +1,13 @@
+
+
+{
+  "id_column": "ID",
+  "time_column": "Cycle_Index",
+  "target_columns": ["Max. Voltage Dischar. (V)","Min. Voltage Charg. (V)","Time at 4.15V (s)"],
+  "noise_dim": 10,
+  "seq_len": 50,
+  "epochs": 50,
+  "batch_size": 32,
+  "lr": 0.0002,
+  "hidden_dim": 32 
+}
