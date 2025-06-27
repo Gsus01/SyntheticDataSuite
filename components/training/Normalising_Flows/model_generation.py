@@ -1,19 +1,15 @@
 
 import pandas as pd
-import numpy as np
 import json
 import argparse
 import joblib
 import logging
 from pathlib import Path
-from sklearn.decomposition import DictionaryLearning
-from sklearn.preprocessing import StandardScaler
 import os
-
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from nflows.flows import Flow
 from nflows.distributions import StandardNormal
 from nflows.transforms import (
@@ -25,9 +21,6 @@ from nflows.transforms import (
 )
 from nflows.nn.nets import ResidualNet
 
-
-# Configurar logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 class TimeSeriesFlowSynthesizer:
     def __init__(self, id_column='ID', flow_type='maf', hidden_features=64, num_layers=5, use_reverse=True):
@@ -145,10 +138,13 @@ class TimeSeriesFlowSynthesizer:
             samples = self.flow.sample(total_samples).numpy()
         df_synth = self._postprocess(samples, original_len=n_series)
         return df_synth
-    
 
+
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 def main():
-    parser = argparse.ArgumentParser(description="Entrena un modelo de codificación dispersa (Sparse Coding) multivariado.")
+    parser = argparse.ArgumentParser(description="Entrena un modelo de normalizing flows para series temporales.")
     parser.add_argument("--input_path", required=True, help="Ruta al archivo CSV de entrada")
     parser.add_argument("--output_path", required=True, help="Ruta para guardar el modelo")
     parser.add_argument("--config", required=True, help="Ruta al archivo JSON con configuración")
@@ -157,54 +153,50 @@ def main():
     with open(args.config, "r") as f:
         config = json.load(f)
 
-    required_keys = ["id_column", "time_column", "target_columns", "n_components", "alpha", "max_iter"]
+    # Las claves de entrenamiento ('epochs', 'batch_size', 'lr') son para el método fit, no para el constructor.
+    required_keys = [
+        "flow_type", "hidden_features",
+        "num_layers", "use_reverse", "epochs", "batch_size", "lr"
+    ]
     for key in required_keys:
         if key not in config:
-            logging.error(f"Falta la clave requerida '{key}' en el JSON.")
+            logging.error(f"Falta la clave requerida '{key}' en el archivo de configuración.")
             exit(1)
 
-    id_col = config["id_column"]
-    time_col = config["time_column"]
-    target_cols = config["target_columns"]
+    input_path = Path(args.input_path)
+    if not input_path.exists():
+        logging.error(f"El archivo de entrada no existe: {input_path}")
+        exit(1)
 
-    df = pd.read_csv(args.input_path)
-    logging.info(f"Archivo cargado con {len(df)} registros.")
+    df = pd.read_csv(input_path)
+    logging.info(f"Datos cargados desde {input_path} con forma {df.shape}")
 
-    # Agrupar por ID y concatenar todas las series (en línea)
-    grouped = df.groupby(id_col)
-    series_data = []
-    for _, group in grouped:
-        group_sorted = group.sort_values(by=time_col)
-        values = group_sorted[target_cols].values
-        series_data.append(values)
-    full_data = np.vstack(series_data)
-
-    scaler = StandardScaler()
-    full_data_scaled = scaler.fit_transform(full_data)
-
-    logging.info("Entrenando modelo DictionaryLearning (sparse coding)...")
-    dict_learner = DictionaryLearning(
-        n_components=config["n_components"],
-        alpha=config["alpha"],
-        max_iter=config["max_iter"],
-        random_state=42
+    # --- CAMBIO CLAVE AQUÍ: Inicializar modelo SIN los parámetros de entrenamiento ---
+    model = TimeSeriesFlowSynthesizer(
+        flow_type=config["flow_type"],
+        hidden_features=config["hidden_features"],
+        num_layers=config["num_layers"],
+        use_reverse=config["use_reverse"]
     )
-    codes = dict_learner.fit_transform(full_data_scaled)
-    dictionary = dict_learner.components_
+    
+    # --- Y pasar los parámetros de entrenamiento al método fit() ---
+    model.fit(
+        df,
+        epochs=config["epochs"],
+        batch_size=config["batch_size"],
+        lr=config["lr"]
+    )
+    logging.info("Entrenamiento del modelo finalizado.")
 
-    #se asegura de que existe el directorio:
+    # Asegura que existe el directorio:
     output_dir = os.path.dirname(args.output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
         logging.info(f"Directorio creado: {output_dir}")
-    # Guardar el modelo
-    joblib.dump({
-        "dictionary": dictionary,
-        "scaler": scaler,
-        "target_columns": target_cols
-    }, args.output_path)
 
-    logging.info(f"Modelo guardado exitosamente en {args.output_path}")
+    # Guardar modelo
+    joblib.dump(model, args.output_path)
+    logging.info(f"Modelo guardado en {args.output_path}")
 
 if __name__ == "__main__":
     main()

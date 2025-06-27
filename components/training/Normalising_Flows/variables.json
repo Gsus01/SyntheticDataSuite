@@ -1,0 +1,9 @@
+{
+  "flow_type": "realnvp",
+  "hidden_features": 64,
+  "num_layers": 5,
+  "use_reverse": true,
+  "epochs": 100,
+  "batch_size": 128,
+  "lr": 0.001
+}

@@ -1,19 +1,14 @@
-
 import pandas as pd
-import numpy as np
 import json
 import argparse
 import joblib
 import logging
 from pathlib import Path
-from sklearn.decomposition import DictionaryLearning
-from sklearn.preprocessing import StandardScaler
 import os
-
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from nflows.flows import Flow
 from nflows.distributions import StandardNormal
 from nflows.transforms import (
@@ -25,9 +20,6 @@ from nflows.transforms import (
 )
 from nflows.nn.nets import ResidualNet
 
-
-# Configurar logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 class TimeSeriesFlowSynthesizer:
     def __init__(self, id_column='ID', flow_type='maf', hidden_features=64, num_layers=5, use_reverse=True):
@@ -145,66 +137,47 @@ class TimeSeriesFlowSynthesizer:
             samples = self.flow.sample(total_samples).numpy()
         df_synth = self._postprocess(samples, original_len=n_series)
         return df_synth
-    
 
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 def main():
-    parser = argparse.ArgumentParser(description="Entrena un modelo de codificación dispersa (Sparse Coding) multivariado.")
-    parser.add_argument("--input_path", required=True, help="Ruta al archivo CSV de entrada")
-    parser.add_argument("--output_path", required=True, help="Ruta para guardar el modelo")
+    parser = argparse.ArgumentParser(description="Genera series sintéticas usando un modelo de normalizing flows.")
+    parser.add_argument("--model_path", required=True, help="Ruta al modelo .pkl entrenado con Sparse Coding")
+    parser.add_argument("--output_path", required=True, help="Ruta donde guardar los datos sintéticos")
     parser.add_argument("--config", required=True, help="Ruta al archivo JSON con configuración")
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
         config = json.load(f)
 
-    required_keys = ["id_column", "time_column", "target_columns", "n_components", "alpha", "max_iter"]
+    # El 'start_id' no se pasa al método generate, pero lo mantenemos en config
+    required_keys = ["n_series", "length_per_series", "start_id"]
     for key in required_keys:
         if key not in config:
-            logging.error(f"Falta la clave requerida '{key}' en el JSON.")
+            logging.error(f"Falta la clave requerida '{key}' en el archivo de configuración.")
             exit(1)
 
-    id_col = config["id_column"]
-    time_col = config["time_column"]
-    target_cols = config["target_columns"]
+    model_path = Path(args.model_path)
+    if not model_path.exists():
+        logging.error(f"El archivo del modelo no existe: {model_path}")
+        exit(1)
 
-    df = pd.read_csv(args.input_path)
-    logging.info(f"Archivo cargado con {len(df)} registros.")
+    model = joblib.load(model_path)
+    logging.info("Modelo cargado correctamente.")
 
-    # Agrupar por ID y concatenar todas las series (en línea)
-    grouped = df.groupby(id_col)
-    series_data = []
-    for _, group in grouped:
-        group_sorted = group.sort_values(by=time_col)
-        values = group_sorted[target_cols].values
-        series_data.append(values)
-    full_data = np.vstack(series_data)
-
-    scaler = StandardScaler()
-    full_data_scaled = scaler.fit_transform(full_data)
-
-    logging.info("Entrenando modelo DictionaryLearning (sparse coding)...")
-    dict_learner = DictionaryLearning(
-        n_components=config["n_components"],
-        alpha=config["alpha"],
-        max_iter=config["max_iter"],
-        random_state=42
+    # --- CAMBIO CLAVE AQUÍ: Llamar a 'generate' en lugar de 'sample' ---
+    # Y pasar solo los argumentos que 'generate' espera
+    df_synth = model.generate(
+        n_series=config["n_series"],
+        length_per_series=config["length_per_series"]
+        # No se pasa start_id aquí, ya que generate no lo acepta como argumento.
+        # El manejo de ID sintéticos se hace internamente en _postprocess.
     )
-    codes = dict_learner.fit_transform(full_data_scaled)
-    dictionary = dict_learner.components_
 
-    #se asegura de que existe el directorio:
-    output_dir = os.path.dirname(args.output_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        logging.info(f"Directorio creado: {output_dir}")
-    # Guardar el modelo
-    joblib.dump({
-        "dictionary": dictionary,
-        "scaler": scaler,
-        "target_columns": target_cols
-    }, args.output_path)
-
-    logging.info(f"Modelo guardado exitosamente en {args.output_path}")
+    output_path = Path(args.output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df_synth.to_csv(output_path, index=False)
+    logging.info(f"Series sintéticas guardadas en {output_path}")
 
 if __name__ == "__main__":
     main()
