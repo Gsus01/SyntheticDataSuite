@@ -1,0 +1,8 @@
+{
+  "features": ["Max. Voltage Dischar. (V)","Min. Voltage Charg. (V)","Time at 4.15V (s)"] ,
+  "max_len": 1081,
+  "T": 1000,
+  "batch_size": 14,
+  "lr": 0.0001,
+  "epochs": 5
+}
