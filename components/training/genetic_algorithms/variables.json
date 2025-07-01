@@ -1,0 +1,9 @@
+{
+  "min_length": 1000,
+  "max_length": 1100,
+  "population_size": 50,
+  "generations": 30,
+  "mutation_rate": 0.1,
+  "time_col": "Cycle_Index",
+  "id_col":  "ID"
+}
