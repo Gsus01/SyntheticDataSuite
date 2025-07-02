@@ -1,0 +1,11 @@
+{
+  "model_type": "ARIMA",       
+  "variables": [
+    "Max. Voltage Dischar. (V)",
+    "Min. Voltage Charg. (V)",
+    "Time at 4.15V (s)"
+  ],
+  "ids": [1, 2],
+  "arima_order": [2, 1, 1],      
+  "sarima_order": [2, 1, 1, 1, 1, 1, 12] 
+}
