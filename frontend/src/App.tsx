@@ -1,13 +1,12 @@
-import './App.css'
-import Canvas from './components/Canvas'
+import EditorLayout from './components/EditorLayout';
+import './App.css';
 
 function App() {
-
   return (
-    <div className="App">
-      <Canvas />
+    <div className="App h-screen w-screen">
+      <EditorLayout />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
