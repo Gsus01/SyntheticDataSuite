@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* React Flow overrides: make node wrappers transparent so custom cards control visuals */
+.react-flow__node,
+.react-flow__node-input,
+.react-flow__node-default,
+.react-flow__node-output {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.react-flow__node.selected,
+.react-flow__node:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Optional: adjust handle size to match our compact cards */
+.react-flow__handle {
+  width: 12px !important;
+  height: 12px !important;
+}

@@ -1,61 +1,52 @@
-import React from 'react';
-import { nodeTypes, categoryConfig } from '../data/nodeTypes';
-import type { NodePaletteItem } from '../data/nodeTypes';
-import './Sidebar.css';
+"use client";
 
-const Sidebar: React.FC = () => {
-  const onDragStart = (event: React.DragEvent, item: NodePaletteItem) => {
-    event.dataTransfer.setData('application/reactflow-type', item.type);
-    event.dataTransfer.setData('application/reactflow-name', item.name);
-    event.dataTransfer.setData('application/reactflow-category', item.category);
-    event.dataTransfer.effectAllowed = 'move';
-  };
+import React from "react";
+import NodeCard from "@/components/NodeCard";
 
-  // Agrupar nodos por categoría
-  const groupedNodes = Object.entries(categoryConfig).map(([category, config]) => ({
-    category: category as keyof typeof categoryConfig,
-    config,
-    nodes: nodeTypes.filter(node => node.category === category)
-  }));
+type Item = {
+  label: string;
+  type: "nodeInput" | "nodeDefault" | "nodeOutput";
+};
 
+const items: Item[] = [
+  { label: "Input Node", type: "nodeInput" },
+  { label: "Default Node", type: "nodeDefault" },
+  { label: "Output Node", type: "nodeOutput" },
+];
+
+function onDragStart(event: React.DragEvent<HTMLDivElement>, nodeType: Item["type"]) {
+  event.dataTransfer.setData("application/reactflow", nodeType);
+  event.dataTransfer.effectAllowed = "move";
+}
+
+export default function Sidebar() {
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <h3>Component Palette</h3>
-      </div>
-      
-      <div className="sidebar-content">
-        {groupedNodes.map(({ category, config, nodes }) => (
-          <div key={category} className="category-section">
-            <h4 
-              className="category-title"
-              style={{ color: config.color }}
-            >
-              {config.label} ({nodes.length})
-            </h4>
-            
-            <div className="nodes-list">
-              {nodes.map((node) => (
-                <div
-                  key={node.id}
-                  className="node-item"
-                  draggable
-                  onDragStart={(event) => onDragStart(event, node)}
-                  style={{ borderLeftColor: node.color }}
-                  title={node.description}
-                >
-                  <div className="node-name">{node.name}</div>
-                  <div className="node-description">{node.description}</div>
-                </div>
-              ))}
-            </div>
+    <aside className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
+      <div className="mb-3 font-medium text-gray-600 uppercase tracking-wide">Nodos</div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.type}
+            role="button"
+            tabIndex={0}
+            draggable
+            onDragStart={(e) => onDragStart(e, item.type)}
+            className="cursor-grab active:cursor-grabbing"
+          >
+            <NodeCard
+              label={item.label}
+              variant={
+                item.type === "nodeInput"
+                  ? "input"
+                  : item.type === "nodeDefault"
+                  ? "default"
+                  : "output"
+              }
+              compact
+            />
           </div>
         ))}
       </div>
-      
-
-    </div>
+    </aside>
   );
-};
-
-export default Sidebar;
+}
