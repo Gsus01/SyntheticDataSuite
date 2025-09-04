@@ -2,20 +2,21 @@
 
 import React from "react";
 import NodeCard from "@/components/NodeCard";
+import { DND_MIME, NODE_TYPES, type NodeTypeId } from "@/lib/flow-const";
 
 type Item = {
   label: string;
-  type: "nodeInput" | "nodeDefault" | "nodeOutput";
+  type: NodeTypeId;
 };
 
 const items: Item[] = [
-  { label: "Input Node", type: "nodeInput" },
-  { label: "Default Node", type: "nodeDefault" },
-  { label: "Output Node", type: "nodeOutput" },
+  { label: "Input Node", type: NODE_TYPES.nodeInput },
+  { label: "Default Node", type: NODE_TYPES.nodeDefault },
+  { label: "Output Node", type: NODE_TYPES.nodeOutput },
 ];
 
 function onDragStart(event: React.DragEvent<HTMLDivElement>, nodeType: Item["type"]) {
-  event.dataTransfer.setData("application/reactflow", nodeType);
+  event.dataTransfer.setData(DND_MIME, nodeType);
   event.dataTransfer.effectAllowed = "move";
 }
 

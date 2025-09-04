@@ -7,19 +7,19 @@ import NodeCard from "@/components/NodeCard";
 type Variant = "input" | "default" | "output";
 type NodeData = { label?: string };
 
-function BaseNode({ data, variant }: NodeProps<NodeData> & { variant: Variant }) {
+function BaseNode({ data, selected, variant }: NodeProps<NodeData> & { variant: Variant }) {
   const label = data?.label ?? "Node";
 
   return (
     <div className="relative">
       {/* Handles depending on variant */}
       {variant !== "input" && (
-        <Handle type="target" position={Position.Left} className="!w-3 !h-3" />
+        <Handle type="target" position={Position.Left} style={{ width: 12, height: 12 }} />
       )}
       {variant !== "output" && (
-        <Handle type="source" position={Position.Right} className="!w-3 !h-3" />
+        <Handle type="source" position={Position.Right} style={{ width: 12, height: 12 }} />
       )}
-      <NodeCard label={label} variant={variant} />
+      <NodeCard label={label} variant={variant} selected={selected} />
     </div>
   );
 }

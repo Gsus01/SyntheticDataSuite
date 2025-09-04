@@ -8,6 +8,7 @@ export type NodeCardProps = {
   label: string;
   variant: Variant;
   compact?: boolean;
+  selected?: boolean;
 };
 
 const variantClasses: Record<Variant, string> = {
@@ -19,7 +20,7 @@ const variantClasses: Record<Variant, string> = {
     "border-emerald-300 bg-emerald-50/60 text-emerald-800 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-100",
 };
 
-export default function NodeCard({ label, variant, compact }: NodeCardProps) {
+export default function NodeCard({ label, variant, compact, selected }: NodeCardProps) {
   return (
     <div
       className={
@@ -28,11 +29,11 @@ export default function NodeCard({ label, variant, compact }: NodeCardProps) {
         " " +
         (compact
           ? "px-3 py-2 text-xs"
-          : "px-4 py-2 text-sm sm:text-base")
+          : "px-4 py-2 text-sm sm:text-base") +
+        (selected ? " ring-2 ring-blue-400/60" : "")
       }
     >
       <div className="font-medium">{label}</div>
     </div>
   );
 }
-
