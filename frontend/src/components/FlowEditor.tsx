@@ -10,11 +10,12 @@ import ReactFlow, {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import Sidebar from "@/components/Sidebar";
 import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNodes";
-import { DND_MIME, NODE_TYPES, type NodeTypeId } from "@/lib/flow-const";
+import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 
 let id = 0;
 const getId = () => `dnd_${id++}`;
@@ -26,7 +27,16 @@ function EditorInner() {
   const { project } = useReactFlow();
 
   const onConnect = useCallback(
-    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Edge | Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...params,
+            markerEnd: { type: MarkerType.ArrowClosed },
+          } as Edge,
+          eds
+        )
+      ),
     [setEdges]
   );
 
@@ -41,25 +51,33 @@ function EditorInner() {
       const bounds = reactFlowWrapper.current?.getBoundingClientRect();
       if (!bounds) return;
 
-      const type = event.dataTransfer.getData(DND_MIME) as NodeTypeId;
-      if (!type) return;
-
       const position = project({
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,
       });
 
+      const type = event.dataTransfer.getData(DND_MIME) as NodeTypeId;
+      if (!type) return;
+
+      const labelFromDrag = event.dataTransfer.getData("text/plain");
       const labelMap: Record<NodeTypeId, string> = {
         [NODE_TYPES.nodeInput]: "Input Node",
         [NODE_TYPES.nodeDefault]: "Default Node",
         [NODE_TYPES.nodeOutput]: "Output Node",
       };
 
+      const metaPayload = event.dataTransfer.getData(NODE_META_MIME);
+      let meta: any = undefined;
+      try { meta = metaPayload ? JSON.parse(metaPayload) : undefined; } catch {}
+
       const newNode: Node = {
         id: getId(),
         type,
         position,
-        data: { label: labelMap[type] ?? "Node" },
+        data: {
+          label: labelFromDrag || labelMap[type] || "Node",
+          ...(meta?.tone ? { tone: meta.tone } : {}),
+        },
       };
 
       setNodes((nds) => nds.concat(newNode));
@@ -79,6 +97,12 @@ function EditorInner() {
           onConnect={onConnect}
           onDrop={onDrop}
           onDragOver={onDragOver}
+          defaultEdgeOptions={useMemo(
+            () => ({
+              markerEnd: { type: MarkerType.ArrowClosed },
+            }),
+            []
+          )}
           nodeTypes={useMemo(
             () => ({
               [NODE_TYPES.nodeInput]: InputNode,

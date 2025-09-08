@@ -1,4 +1,5 @@
 export const DND_MIME = "application/reactflow" as const;
+export const NODE_META_MIME = "application/x-reactflow-node-meta" as const;
 
 export const NODE_TYPES = {
   nodeInput: "nodeInput",
@@ -7,4 +8,3 @@ export const NODE_TYPES = {
 } as const;
 
 export type NodeTypeId = typeof NODE_TYPES[keyof typeof NODE_TYPES];
-
