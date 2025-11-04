@@ -23,6 +23,7 @@ type ApiNodeTemplate = {
   artifacts: { inputs: ApiArtifact[]; outputs: ApiArtifact[] };
   limits?: Record<string, unknown>;
   version?: string;
+  parameter_defaults?: Record<string, unknown>;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -47,7 +48,18 @@ function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: ApiNode
   event.dataTransfer.setData(DND_MIME, rfType);
   event.dataTransfer.setData("text/plain", tpl.name);
   const tone = (tpl.type || "other").toLowerCase();
-  event.dataTransfer.setData(NODE_META_MIME, JSON.stringify({ tone }));
+  const parameterKeys = tpl.parameter_defaults
+    ? Object.keys(tpl.parameter_defaults)
+    : [];
+  event.dataTransfer.setData(
+    NODE_META_MIME,
+    JSON.stringify({
+      tone,
+      templateName: tpl.name,
+      parameterDefaults: tpl.parameter_defaults ?? null,
+      parameterKeys,
+    })
+  );
   event.dataTransfer.effectAllowed = "move";
 }
 
@@ -77,8 +89,11 @@ export default function Sidebar() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: ApiNodeTemplate[] = await res.json();
         if (!cancelled) setTemplates(data);
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Error cargando catálogo");
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Error cargando catálogo";
+          setError(message || "Error cargando catálogo");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -100,126 +115,128 @@ export default function Sidebar() {
   }, [templates]);
 
   return (
-    <aside className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
+    <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
       <div className="mb-3 font-medium text-gray-600 uppercase tracking-wide">Nodos</div>
-      {/* Base nodes for prototyping */}
-      <Section title="Básicos">
-        {baseItems.map((item) => (
-          <div
-            key={item.type}
-            role="button"
-            tabIndex={0}
-            draggable
-            onDragStart={(e) => onDragStart(e, item.type, item.label)}
-            className="cursor-grab active:cursor-grabbing"
-          >
-            <NodeCard
-              label={item.label}
-              variant={
-                item.type === "nodeInput"
-                  ? "input"
-                  : item.type === "nodeDefault"
-                  ? "default"
-                  : "output"
-              }
-              compact
-            />
-          </div>
-        ))}
-      </Section>
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pr-1">
+        {/* Base nodes for prototyping */}
+        <Section title="Básicos">
+          {baseItems.map((item) => (
+            <div
+              key={item.type}
+              role="button"
+              tabIndex={0}
+              draggable
+              onDragStart={(e) => onDragStart(e, item.type, item.label)}
+              className="cursor-grab active:cursor-grabbing"
+            >
+              <NodeCard
+                label={item.label}
+                variant={
+                  item.type === "nodeInput"
+                    ? "input"
+                    : item.type === "nodeDefault"
+                    ? "default"
+                    : "output"
+                }
+                compact
+              />
+            </div>
+          ))}
+        </Section>
 
-      {/* Catalog from backend */}
-      <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-        Catálogo
-      </div>
-      {loading && <div className="text-xs text-gray-500">Cargando catálogo…</div>}
-      {error && (
-        <div className="text-xs text-red-600">No se pudo cargar: {error}</div>
-      )}
-      {!loading && !error && templates && (
-        <div>
-          {byType.input.length > 0 && (
-            <Section title="Entrada">
-              {byType.input.map((t) => (
-                <div
-                  key={t.name}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => onDragStartCatalog(e, t)}
-                  className="cursor-grab active:cursor-grabbing"
-                >
-                  <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="input" compact />
-                </div>
-              ))}
-            </Section>
-          )}
-          {byType.preprocessing.length > 0 && (
-            <Section title="Preprocesamiento">
-              {byType.preprocessing.map((t) => (
-                <div
-                  key={t.name}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => onDragStartCatalog(e, t)}
-                  className="cursor-grab active:cursor-grabbing"
-                >
-                  <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="preprocessing" compact />
-                </div>
-              ))}
-            </Section>
-          )}
-          {byType.training.length > 0 && (
-            <Section title="Entrenamiento">
-              {byType.training.map((t) => (
-                <div
-                  key={t.name}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => onDragStartCatalog(e, t)}
-                  className="cursor-grab active:cursor-grabbing"
-                >
-                  <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="training" compact />
-                </div>
-              ))}
-            </Section>
-          )}
-          {byType.generation.length > 0 && (
-            <Section title="Generación">
-              {byType.generation.map((t) => (
-                <div
-                  key={t.name}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => onDragStartCatalog(e, t)}
-                  className="cursor-grab active:cursor-grabbing"
-                >
-                  <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="generation" compact />
-                </div>
-              ))}
-            </Section>
-          )}
-          {byType.other.length > 0 && (
-            <Section title="Otros">
-              {byType.other.map((t) => (
-                <div
-                  key={t.name}
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onDragStart={(e) => onDragStartCatalog(e, t)}
-                  className="cursor-grab active:cursor-grabbing"
-                >
-                  <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="other" compact />
-                </div>
-              ))}
-            </Section>
-          )}
+        {/* Catalog from backend */}
+        <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+          Catálogo
         </div>
-      )}
+        {loading && <div className="text-xs text-gray-500">Cargando catálogo…</div>}
+        {error && (
+          <div className="text-xs text-red-600">No se pudo cargar: {error}</div>
+        )}
+        {!loading && !error && templates && (
+          <div>
+            {byType.input.length > 0 && (
+              <Section title="Entrada">
+                {byType.input.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="input" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+            {byType.preprocessing.length > 0 && (
+              <Section title="Preprocesamiento">
+                {byType.preprocessing.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="preprocessing" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+            {byType.training.length > 0 && (
+              <Section title="Entrenamiento">
+                {byType.training.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="training" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+            {byType.generation.length > 0 && (
+              <Section title="Generación">
+                {byType.generation.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="generation" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+            {byType.other.length > 0 && (
+              <Section title="Otros">
+                {byType.other.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="other" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

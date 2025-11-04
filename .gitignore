@@ -2,3 +2,5 @@ model
 .next
 node_modules
 .node
+
+/.tmp/

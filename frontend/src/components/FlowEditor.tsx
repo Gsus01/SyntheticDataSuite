@@ -15,16 +15,26 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import Sidebar from "@/components/Sidebar";
 import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNodes";
+import NodeInspector from "@/components/NodeInspector";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
+import type { FlowNodeData } from "@/types/flow";
 
 let id = 0;
 const getId = () => `dnd_${id++}`;
 
+type DragMetaPayload = {
+  tone?: unknown;
+  templateName?: unknown;
+  parameterKeys?: unknown;
+  parameterDefaults?: unknown;
+};
+
 function EditorInner() {
   const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const { project } = useReactFlow();
+  const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
 
   const onConnect = useCallback(
     (params: Edge | Connection) =>
@@ -44,6 +54,17 @@ function EditorInner() {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
   }, []);
+
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [nodes, selectedNodeId]
+  );
+
+  React.useEffect(() => {
+    if (selectedNodeId && !nodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(null);
+    }
+  }, [nodes, selectedNodeId]);
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -67,16 +88,33 @@ function EditorInner() {
       };
 
       const metaPayload = event.dataTransfer.getData(NODE_META_MIME);
-      let meta: any = undefined;
-      try { meta = metaPayload ? JSON.parse(metaPayload) : undefined; } catch {}
+      let meta: DragMetaPayload | undefined;
+      try {
+        meta = metaPayload ? (JSON.parse(metaPayload) as DragMetaPayload) : undefined;
+      } catch {
+        meta = undefined;
+      }
 
-      const newNode: Node = {
+      const tone = typeof meta?.tone === "string" ? meta.tone : undefined;
+      const templateName = typeof meta?.templateName === "string" ? meta.templateName : undefined;
+      const parameterKeys = Array.isArray(meta?.parameterKeys)
+        ? meta.parameterKeys.filter((key: unknown): key is string => typeof key === "string")
+        : undefined;
+      const parameterDefaults =
+        meta?.parameterDefaults && typeof meta.parameterDefaults === "object"
+          ? (meta.parameterDefaults as Record<string, unknown>)
+          : undefined;
+
+      const newNode: Node<FlowNodeData> = {
         id: getId(),
         type,
         position,
         data: {
           label: labelFromDrag || labelMap[type] || "Node",
-          ...(meta?.tone ? { tone: meta.tone } : {}),
+          ...(tone ? { tone } : {}),
+          ...(templateName ? { templateName } : {}),
+          ...(parameterKeys ? { parameterKeys } : {}),
+          ...(parameterDefaults ? { parameterDefaults } : {}),
         },
       };
 
@@ -85,34 +123,69 @@ function EditorInner() {
     [project, setNodes]
   );
 
+  const handleSelectionChange = useCallback(
+    ({ nodes: selected }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) => {
+      if (selected.length) {
+        setSelectedNodeId(selected[0].id);
+      } else {
+        setSelectedNodeId(null);
+      }
+    },
+    []
+  );
+
+  const handleNodeDataChange = useCallback(
+    (nodeId: string, updater: (data: FlowNodeData) => FlowNodeData) => {
+      setNodes((prev) =>
+        prev.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                data: updater(node.data),
+              }
+            : node
+        )
+      );
+    },
+    [setNodes]
+  );
+
   return (
     <div className="flex h-screen w-full">
       <Sidebar />
-      <div ref={reactFlowWrapper} className="flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          defaultEdgeOptions={useMemo(
-            () => ({
-              markerEnd: { type: MarkerType.ArrowClosed },
-            }),
-            []
-          )}
-          nodeTypes={useMemo(
-            () => ({
-              [NODE_TYPES.nodeInput]: InputNode,
-              [NODE_TYPES.nodeDefault]: DefaultNode,
-              [NODE_TYPES.nodeOutput]: OutputNode,
-            }),
-            []
-          )}
-          fitView
-          className="bg-white rf-instance"
+      <div className="relative flex min-w-0 flex-1">
+        <div ref={reactFlowWrapper} className="flex-1">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onSelectionChange={handleSelectionChange}
+            defaultEdgeOptions={useMemo(
+              () => ({
+                markerEnd: { type: MarkerType.ArrowClosed },
+              }),
+              []
+            )}
+            nodeTypes={useMemo(
+              () => ({
+                [NODE_TYPES.nodeInput]: InputNode,
+                [NODE_TYPES.nodeDefault]: DefaultNode,
+                [NODE_TYPES.nodeOutput]: OutputNode,
+              }),
+              []
+            )}
+            fitView
+            className="bg-white rf-instance"
+          />
+        </div>
+        <NodeInspector
+          isOpen={Boolean(selectedNode)}
+          node={selectedNode}
+          onChange={handleNodeDataChange}
         />
       </div>
     </div>

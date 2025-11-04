@@ -1,5 +1,7 @@
+import json
+import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -8,6 +10,10 @@ from pydantic import BaseModel, Field
 
 
 CATALOG_PATH = Path(__file__).parent / "catalog" / "nodes.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+logger = logging.getLogger(__name__)
 
 
 class ArtifactSpec(BaseModel):
@@ -27,6 +33,7 @@ class NodeTemplate(BaseModel):
     artifacts: Artifacts
     limits: Optional[Dict] = None
     version: Optional[str] = None
+    parameter_defaults: Optional[Dict[str, Any]] = None
 
 
 def load_catalog() -> List[NodeTemplate]:
@@ -39,10 +46,50 @@ def load_catalog() -> List[NodeTemplate]:
         raise RuntimeError(f"Failed to read catalog: {e}")
 
     nodes = raw.get("nodes", [])
-    try:
-        return [NodeTemplate(**node) for node in nodes]
-    except Exception as e:
-        raise RuntimeError(f"Invalid catalog format: {e}")
+    templates: List[NodeTemplate] = []
+
+    for node in nodes:
+        node_data = dict(node)
+        param_defaults = None
+        params_file = node_data.pop("parameters_file", None)
+
+        if params_file:
+            params_path = Path(params_file)
+            if not params_path.is_absolute():
+                params_path = PROJECT_ROOT / params_path
+            try:
+                with params_path.open("r", encoding="utf-8") as pf:
+                    param_defaults = json.load(pf)
+            except FileNotFoundError:
+                logger.warning(
+                    "Parameters file not found for node '%s': %s",
+                    node_data.get("name"),
+                    params_path,
+                )
+            except json.JSONDecodeError as exc:
+                logger.warning(
+                    "Invalid JSON in parameters file for node '%s': %s (%s)",
+                    node_data.get("name"),
+                    params_path,
+                    exc,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load parameters file for node '%s': %s (%s)",
+                    node_data.get("name"),
+                    params_path,
+                    exc,
+                )
+
+        if param_defaults is not None:
+            node_data["parameter_defaults"] = param_defaults
+
+        try:
+            templates.append(NodeTemplate(**node_data))
+        except Exception as exc:
+            raise RuntimeError(f"Invalid catalog format for node '{node_data.get('name')}': {exc}")
+
+    return templates
 
 
 app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")

@@ -159,3 +159,14 @@ argo logs <workflow-name>
 argo logs <workflow-name> -c preprocessing
 argo logs <workflow-name> -c train-hmm-model
 ```
+
+---
+
+### Atajo para desarrollo
+Para evitar pasos manuales en local, usa los scripts de `scripts/dev/` o los objetivos del `Makefile` descritos en `docs/dev-workflow.md`. Por ejemplo:
+
+```bash
+make dev            # Levanta MinIO + Argo + port-forwards + backend + frontend
+make k8s-up-argo    # Sólo Argo
+make k8s-up-minio   # Sólo MinIO
+```

@@ -5,7 +5,7 @@ import { Handle, Position, type NodeProps } from "reactflow";
 import NodeCard, { type NodeTone } from "@/components/NodeCard";
 
 type Variant = "input" | "default" | "output";
-type NodeData = { label?: string; tone?: NodeTone };
+type NodeData = { label?: string; tone?: NodeTone } & Record<string, unknown>;
 
 function BaseNode({ data, selected, variant }: NodeProps<NodeData> & { variant: Variant }) {
   const label = data?.label ?? "Node";

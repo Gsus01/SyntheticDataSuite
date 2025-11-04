@@ -29,6 +29,7 @@ nodes:
     type: training
     version: v2
     parameters: [input, output_model, params]
+    parameters_file: components/training/hmm/variables.json
     artifacts:
       inputs:
         - name: processed-data
@@ -44,6 +45,7 @@ nodes:
     type: generation
     version: v2
     parameters: [model, output_data, params]
+    parameters_file: components/generation/hmm/variables.json
     artifacts:
       inputs:
         - name: trained-model
@@ -59,6 +61,7 @@ nodes:
     type: training
     version: v2
     parameters: [data, output_model, params]
+    parameters_file: components/training/gaussian_process/variables.json
     artifacts:
       inputs:
         - name: processed-data
@@ -72,6 +75,7 @@ nodes:
     type: generation
     version: v2
     parameters: [model, output_data, params]
+    parameters_file: components/generation/gaussian_process/variables.json
     artifacts:
       inputs:
         - name: trained-model
@@ -85,6 +89,7 @@ nodes:
     type: training
     version: v2
     parameters: [data, output_model, params]
+    parameters_file: components/training/copulas/variables.json
     artifacts:
       inputs:
         - name: processed-data
@@ -98,6 +103,7 @@ nodes:
     type: generation
     version: v2
     parameters: [model, output_data, params]
+    parameters_file: components/generation/copulas/variables.json
     artifacts:
       inputs:
         - name: trained-model
@@ -111,6 +117,7 @@ nodes:
     type: training
     version: v2
     parameters: [data, output_model, params]
+    parameters_file: components/training/boltzman_machines/variables.json
     artifacts:
       inputs:
         - name: processed-data
@@ -124,6 +131,7 @@ nodes:
     type: generation
     version: v2
     parameters: [model, output_data, params]
+    parameters_file: components/generation/boltzman_machines/variables.json
     artifacts:
       inputs:
         - name: trained-model
@@ -137,6 +145,7 @@ nodes:
     type: training
     version: v2
     parameters: [data, output_model, params]
+    parameters_file: components/training/bayesian_networks/variables.json
     artifacts:
       inputs:
         - name: processed-data
@@ -150,6 +159,7 @@ nodes:
     type: generation
     version: v2
     parameters: [model, output_data, params]
+    parameters_file: components/generation/bayesian_networks/variables.json
     artifacts:
       inputs:
         - name: trained-model
