@@ -76,16 +76,30 @@ kubectl apply -f deploy/argo/minio-creds-secret.yaml
 ```
 
 #### 3.2. Configuración del Repositorio de Artefactos
-El fichero `artifact-repository-configmap.yaml` modifica el `ConfigMap` principal del controlador de Argo (`workflow-controller-configmap`). Dentro de este `ConfigMap`, se especifica la configuración del repositorio de artefactos por defecto:
-* **endpoint**: Apunta al servicio de MinIO que creamos anteriormente (`minio.minio-dev.svc:9000`).
-* **bucket**: Indica el nombre del bucket que se usará (`argo-artifacts`). Argo lo creará si no existe.
-* **insecure**: Se establece en `true` para permitir conexiones sin SSL, lo cual es común en entornos de desarrollo local como Minikube.
-* **accessKeySecret** y **secretKeySecret**: Referencian el `Secret` `minio-creds` para obtener las credenciales de autenticación.
+Argo instala por defecto un repositorio de artefactos llamado `my-minio-cred` que apunta a `minio:9000` y usa las claves `accesskey/secretkey`. Si no lo actualizas, los workflows seguirán buscando los ficheros en ese bucket inexistente aunque hayas cargado los datos en `argo-artifacts`.
 
-Aplica el fichero:
-```bash
-kubectl apply -f deploy/argo/artifact-repository-configmap.yaml
-```
+Para que todo apunte a tu despliegue de MinIO debemos actualizar **dos** `ConfigMaps`:
+
+1. `artifact-repositories-configmap.yaml` sobreescribe el `ConfigMap` global `artifact-repositories` (usado para inputs/outputs vía `argo-server`):
+   ```bash
+   kubectl apply -f deploy/argo/artifact-repositories-configmap.yaml
+   ```
+2. `artifact-repository-configmap.yaml` mantiene en sincronía la configuración del `workflow-controller`:
+   ```bash
+   kubectl apply -f deploy/argo/artifact-repository-configmap.yaml
+   ```
+
+Ambos ficheros configuran:
+* **endpoint**: `minio.minio-dev.svc:9000`
+* **bucket**: `argo-artifacts`
+* **insecure**: `true`
+* **accessKeySecret** / **secretKeySecret**: usan el secreto `minio-creds` con claves `accessKey` y `secretKey` (respeta mayúsculas/minúsculas).
+
+> Si el controlador o el servidor de Argo ya estaban corriendo, reinícialos para que recojan los nuevos valores:
+> ```bash
+> kubectl -n argo rollout restart deployment/workflow-controller
+> kubectl -n argo rollout restart deployment/argo-server
+> ```
 
 ### 4. Lanzamiento y Acceso
 Con todo configurado, ya puedes empezar a lanzar workflows.

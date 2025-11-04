@@ -1,2 +1,4 @@
 model
-.node/
+.next
+node_modules
+.node
