@@ -31,7 +31,8 @@ port-forward-status:
 	./scripts/dev/port-forward.sh status
 
 backend:
-	cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000
+	uv sync --project backend
+	uv run --project backend uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app
 
 frontend:
 	cd frontend && npm run dev

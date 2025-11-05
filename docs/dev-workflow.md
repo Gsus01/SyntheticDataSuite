@@ -102,6 +102,34 @@ MINIKUBE_PROFILE=devbox K8S_CONTEXT=minikube \
   ./scripts/dev/k8s-up.sh
 ```
 
+### Backend y MinIO
+
+El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend. Las variables más importantes son:
+
+- `MINIO_ENDPOINT` — endpoint del servicio S3 (por defecto `localhost:9000`)
+- `MINIO_ACCESS_KEY` — access key obligatoria
+- `MINIO_SECRET_KEY` — secret key obligatoria
+- `MINIO_SECURE` — `false` por defecto (útil para HTTPS en entornos reales)
+- `MINIO_REGION` — opcional, sólo si tu MinIO/S3 la requiere
+- `MINIO_INPUT_BUCKET` — bucket por defecto donde se guardan los ficheros subidos (`artifacts-input` si no se configura)
+
+El backend crea automáticamente `MINIO_INPUT_BUCKET` si no existe. En local, cuando usas los manifests incluidos, las credenciales por defecto son `minioadmin`/`minioadmin`:
+
+```bash
+export MINIO_ACCESS_KEY=minioadmin
+export MINIO_SECRET_KEY=minioadmin
+make backend
+```
+
+Los ficheros que se suben desde el frontend se organizan dentro del bucket mediante la convención:
+
+```
+sessions/<sessionId>/nodes/<nodeId>/<nombre>-<uuid>.<ext>
+```
+
+El `sessionId` se genera en el navegador en cada carga del editor y `nodeId` corresponde al identificador del nodo (o su `templateName` cuando aplica). De esta forma todos los artefactos quedan agrupados por sesión y nodo sin necesidad de configurar buckets adicionales.
+
+
 ---
 
 ### Notas y troubleshooting

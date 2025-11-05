@@ -29,12 +29,20 @@ type DragMetaPayload = {
   parameterDefaults?: unknown;
 };
 
+function generateSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `sess_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function EditorInner() {
   const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const { project } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
+  const sessionId = React.useMemo(() => generateSessionId(), []);
 
   const onConnect = useCallback(
     (params: Edge | Connection) =>
@@ -185,6 +193,7 @@ function EditorInner() {
         <NodeInspector
           isOpen={Boolean(selectedNode)}
           node={selectedNode}
+          sessionId={sessionId}
           onChange={handleNodeDataChange}
         />
       </div>

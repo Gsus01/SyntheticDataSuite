@@ -58,8 +58,16 @@ PIDS=()
 
 if [[ "$DO_BACKEND" -eq 1 ]]; then
   info "Arrancando backend (http://localhost:8000)..."
-  PYTHONPATH="$ROOT_DIR/backend" \
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app-dir "$ROOT_DIR/backend" &
+
+  # Defaults de MinIO en dev si no están definidos
+  export MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost:9000}"
+  export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+  export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+  export MINIO_SECURE="${MINIO_SECURE:-0}"
+
+  # Sync de dependencias desde pyproject/uv.lock y lanzamiento con uv
+  uv sync --project "$ROOT_DIR/backend"
+  uv run --project "$ROOT_DIR/backend" uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app-dir "$ROOT_DIR/backend" &
   PIDS+=($!)
 fi
 

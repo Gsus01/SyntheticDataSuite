@@ -2,6 +2,7 @@
 
 import React from "react";
 import NodeCard from "@/components/NodeCard";
+import { API_BASE } from "@/lib/api";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 
 type Item = {
@@ -25,8 +26,6 @@ type ApiNodeTemplate = {
   version?: string;
   parameter_defaults?: Record<string, unknown>;
 };
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 function onDragStart(event: React.DragEvent<HTMLDivElement>, nodeType: Item["type"], label?: string) {
   event.dataTransfer.setData(DND_MIME, nodeType);
