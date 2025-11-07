@@ -104,7 +104,14 @@ export default function Sidebar() {
   }, []);
 
   const byType = React.useMemo(() => {
-    const groups: Record<string, ApiNodeTemplate[]> = { input: [], preprocessing: [], training: [], generation: [], other: [] };
+    const groups: Record<string, ApiNodeTemplate[]> = {
+      input: [],
+      output: [],
+      preprocessing: [],
+      training: [],
+      generation: [],
+      other: [],
+    };
     (templates || []).forEach((t) => {
       const key = (t.type || "other").toLowerCase();
       if (key in groups) groups[key].push(t);
@@ -165,6 +172,27 @@ export default function Sidebar() {
                     className="cursor-grab active:cursor-grabbing"
                   >
                     <NodeCard label={t.name} variant={inferRfType(t) === NODE_TYPES.nodeInput ? "input" : inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : "default"} tone="input" compact />
+                  </div>
+                ))}
+              </Section>
+            )}
+            {byType.output.length > 0 && (
+              <Section title="Salida">
+                {byType.output.map((t) => (
+                  <div
+                    key={t.name}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => onDragStartCatalog(e, t)}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    <NodeCard
+                      label={t.name}
+                      variant={inferRfType(t) === NODE_TYPES.nodeOutput ? "output" : inferRfType(t) === NODE_TYPES.nodeInput ? "input" : "default"}
+                      tone="output"
+                      compact
+                    />
                   </div>
                 ))}
               </Section>

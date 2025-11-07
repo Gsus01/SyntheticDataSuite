@@ -3,7 +3,7 @@
 import React from "react";
 
 type Variant = "input" | "default" | "output";
-export type NodeTone = "input" | "preprocessing" | "training" | "generation" | "other";
+export type NodeTone = "input" | "preprocessing" | "training" | "generation" | "output" | "other";
 
 export type NodeCardProps = {
   label: string;
@@ -30,6 +30,8 @@ const toneClasses: Record<NodeTone, string> = {
   training:
     "border-amber-300 bg-amber-50/60 text-amber-800 dark:border-amber-400 dark:bg-amber-900/30 dark:text-amber-100",
   generation:
+    "border-emerald-300 bg-emerald-50/60 text-emerald-800 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-100",
+  output:
     "border-emerald-300 bg-emerald-50/60 text-emerald-800 dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-100",
   other:
     "border-gray-300 bg-gray-50/60 text-gray-800 dark:border-gray-500 dark:bg-gray-800/30 dark:text-gray-100",

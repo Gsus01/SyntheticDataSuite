@@ -1,14 +1,19 @@
+import json
 import logging
 import os
+import shlex
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, ConfigDict
 from uuid import uuid4
 
-from minio.error import S3Error
+from minio.error import S3Error  # type: ignore[import-not-found]
 
 from minio_helper import (
     build_session_node_prefix,
@@ -16,6 +21,7 @@ from minio_helper import (
     get_input_bucket,
     get_minio_client,
     sanitize_path_segment,
+    upload_bytes,
 )
 from catalog_loader import NodeTemplate, load_catalog
 from workflow_builder import (
@@ -37,6 +43,48 @@ class ArtifactUploadResponse(BaseModel):
     size: int
     content_type: Optional[str] = None
     original_filename: Optional[str] = None
+
+
+class WorkflowSubmitResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_name: str = Field(..., alias="workflowName")
+    namespace: str
+    bucket: str
+    key: str
+    manifest_filename: str = Field(..., alias="manifestFilename")
+    cli_output: Optional[str] = Field(None, alias="cliOutput")
+
+
+@dataclass
+class ArgoSubmissionResult:
+    workflow_name: str
+    namespace: str
+    cli_output: Optional[str]
+
+
+class OutputArtifactInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    input_name: str = Field(..., alias="inputName")
+    source_node_id: Optional[str] = Field(None, alias="sourceNodeId")
+    source_artifact_name: str = Field(..., alias="sourceArtifactName")
+    bucket: str
+    key: str
+    workflow_input_name: Optional[str] = Field(None, alias="workflowInputName")
+    size: Optional[int] = None
+    content_type: Optional[str] = Field(None, alias="contentType")
+    exists: bool = False
+
+
+class ArtifactPreviewResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    content: str
+    truncated: bool
+    content_type: Optional[str] = Field(None, alias="contentType")
+    encoding: str = "utf-8"
+    size: Optional[int] = None
 
 
 app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")
@@ -161,3 +209,280 @@ def render_workflow(payload: WorkflowGraphPayload):
         raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}")
 
     return {"filename": filename, "yaml": yaml_content}
+
+
+def _extract_workflow_name(text: str) -> Optional[str]:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("name:"):
+            return stripped.split(":", 1)[1].strip()
+    return None
+
+
+def _submit_workflow_via_cli(yaml_content: str) -> ArgoSubmissionResult:
+    namespace = os.getenv("ARGO_NAMESPACE", "argo")
+    argo_cli = os.getenv("ARGO_CLI_PATH", "argo")
+    extra_args = os.getenv("ARGO_SUBMIT_EXTRA_ARGS")
+
+    command = [argo_cli, "submit", "-", "--namespace", namespace, "--output", "json"]
+    if extra_args:
+        command.extend(shlex.split(extra_args))
+
+    try:
+        result = subprocess.run(
+            command,
+            input=yaml_content.encode("utf-8"),
+            capture_output=True,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Argo CLI no encontrado. Asegúrate de instalar 'argo' o configura ARGO_CLI_PATH."
+        ) from exc
+    except subprocess.CalledProcessError as exc:  # noqa:  BLE001 - necesitamos capturar errores específicos
+        stdout_text = exc.stdout.decode("utf-8", errors="ignore") if exc.stdout else ""
+        stderr_text = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else ""
+        combined = "\n".join(filter(None, [stdout_text.strip(), stderr_text.strip()]))
+        logger.error("Fallo al ejecutar 'argo submit': %s", combined or exc)
+        raise RuntimeError(combined or "Fallo al ejecutar 'argo submit'") from exc
+
+    stdout_text = result.stdout.decode("utf-8", errors="ignore").strip()
+    stderr_text = result.stderr.decode("utf-8", errors="ignore").strip()
+
+    workflow_name: Optional[str] = None
+
+    if stdout_text:
+        try:
+            parsed = json.loads(stdout_text)
+            workflow_name = parsed.get("metadata", {}).get("name")
+        except json.JSONDecodeError:
+            workflow_name = _extract_workflow_name(stdout_text)
+
+    if not workflow_name and stderr_text:
+        workflow_name = _extract_workflow_name(stderr_text)
+
+    if not workflow_name:
+        logger.warning("No se pudo extraer el nombre del workflow de la salida: %s", stdout_text)
+        raise RuntimeError(
+            "No se pudo determinar el nombre del workflow desde la salida del comando 'argo submit'."
+        )
+
+    cli_output = stdout_text or stderr_text or None
+    return ArgoSubmissionResult(workflow_name=workflow_name, namespace=namespace, cli_output=cli_output)
+
+
+def _stat_object(client, bucket: str, key: str):
+    try:
+        return client.stat_object(bucket, key)
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchBucket"}:
+            return None
+        raise
+
+
+def _stream_object(client, bucket: str, key: str, chunk_size: int = 1024 * 1024) -> Iterable[bytes]:
+    obj = client.get_object(bucket, key)
+    try:
+        for chunk in iter(lambda: obj.read(chunk_size), b""):
+            if chunk:
+                yield chunk
+            else:
+                break
+    finally:
+        obj.close()
+        obj.release_conn()
+
+
+@app.post("/workflow/submit", response_model=WorkflowSubmitResponse)
+def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
+    try:
+        plan = build_workflow_plan(payload)
+        yaml_content = render_workflow_yaml(plan)
+        filename = suggest_workflow_filename(plan)
+    except (UnknownTemplateError, MissingArtifactError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - unexpected
+        raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}")
+
+    session_segment = sanitize_path_segment(payload.session_id, "session")
+    manifest_key = f"sessions/{session_segment}/workflow/{filename}"
+
+    try:
+        client = get_minio_client()
+        upload_bytes(
+            client,
+            plan.bucket,
+            manifest_key,
+            yaml_content.encode("utf-8"),
+            content_type="application/x-yaml",
+        )
+    except (S3Error, RuntimeError) as exc:
+        logger.error("Fallo al subir el workflow a MinIO: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error subiendo a MinIO: {exc}") from exc
+
+    try:
+        submission = _submit_workflow_via_cli(yaml_content)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    logger.info(
+        "Workflow %s enviado a Argo en namespace %s. Manifest almacenado en %s/%s",
+        submission.workflow_name,
+        submission.namespace,
+        plan.bucket,
+        manifest_key,
+    )
+
+    return WorkflowSubmitResponse(
+        workflowName=submission.workflow_name,
+        namespace=submission.namespace,
+        bucket=plan.bucket,
+        key=manifest_key,
+        manifestFilename=filename,
+        cliOutput=submission.cli_output,
+    )
+
+
+@app.post("/workflow/output-artifacts", response_model=List[OutputArtifactInfo])
+def get_output_artifacts(payload: WorkflowGraphPayload, node_id: str = Query(..., alias="nodeId")) -> List[OutputArtifactInfo]:
+    try:
+        plan = build_workflow_plan(payload)
+    except (UnknownTemplateError, MissingArtifactError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - unexpected
+        raise HTTPException(status_code=500, detail=f"Failed to build workflow plan: {exc}")
+
+    node_plan = plan.nodes.get(node_id)
+    if not node_plan:
+        raise HTTPException(status_code=404, detail=f"Nodo '{node_id}' no encontrado en el grafo")
+    if node_plan.template.type != "output":
+        raise HTTPException(status_code=400, detail="El nodo indicado no es de tipo salida")
+
+    try:
+        client = get_minio_client()
+    except RuntimeError as exc:
+        logger.warning("No se pudo inicializar cliente de MinIO para consultar salidas: %s", exc)
+        client = None
+
+    artifacts: List[OutputArtifactInfo] = []
+
+    for binding in node_plan.input_bindings.values():
+        info = OutputArtifactInfo(
+            inputName=binding.input_name,
+            sourceNodeId=binding.source_node_id,
+            sourceArtifactName=binding.source_artifact_name,
+            bucket=binding.bucket,
+            key=binding.key,
+            workflowInputName=binding.workflow_input_name,
+        )
+
+        if client:
+            try:
+                stat = _stat_object(client, binding.bucket, binding.key)
+            except S3Error as exc:
+                logger.warning(
+                    "Error consultando metadata de artefacto %s/%s: %s",
+                    binding.bucket,
+                    binding.key,
+                    exc,
+                )
+                stat = None
+
+            if stat:
+                info.size = getattr(stat, "size", None)
+                info.content_type = getattr(stat, "content_type", None)
+                info.exists = True
+
+        artifacts.append(info)
+
+    return artifacts
+
+
+@app.get("/artifacts/download")
+def download_artifact(bucket: str, key: str):
+    try:
+        client = get_minio_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    stat = _stat_object(client, bucket, key)
+    if stat is None:
+        raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO")
+
+    filename = Path(key).name or "artifact"
+    media_type = getattr(stat, "content_type", None) or "application/octet-stream"
+
+    try:
+        stream = _stream_object(client, bucket, key)
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchBucket"}:
+            raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO") from exc
+        raise HTTPException(status_code=500, detail=f"Error leyendo desde MinIO: {exc}") from exc
+
+    response = StreamingResponse(stream, media_type=media_type)
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if getattr(stat, "size", None) is not None:
+        response.headers["Content-Length"] = str(stat.size)
+    return response
+
+
+@app.get("/artifacts/preview", response_model=ArtifactPreviewResponse)
+def preview_artifact(
+    bucket: str,
+    key: str,
+    max_bytes: int = Query(65536, ge=128, le=4 * 1024 * 1024, alias="maxBytes"),
+) -> ArtifactPreviewResponse:
+    try:
+        client = get_minio_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    stat = _stat_object(client, bucket, key)
+    if stat is None:
+        raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO")
+
+    size = getattr(stat, "size", None)
+    if size is None:
+        read_length = max_bytes
+    elif size <= 0:
+        read_length = 0
+    else:
+        read_length = min(max_bytes, size)
+
+    obj = None
+    try:
+        if read_length > 0:
+            obj = client.get_object(bucket, key, offset=0, length=read_length)
+            data = obj.read(read_length)
+        else:
+            data = b""
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchBucket"}:
+            raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO") from exc
+        raise HTTPException(status_code=500, detail=f"Error leyendo desde MinIO: {exc}") from exc
+    finally:
+        try:
+            if obj is not None:
+                obj.close()
+                obj.release_conn()
+        except Exception:  # noqa: BLE001 - best effort cleanup
+            pass
+
+    truncated = False
+    if size is not None:
+        truncated = size > len(data)
+
+    try:
+        content = data.decode("utf-8")
+        encoding = "utf-8"
+    except UnicodeDecodeError:
+        content = data.decode("utf-8", errors="replace")
+        encoding = "utf-8"
+
+    return ArtifactPreviewResponse(
+        content=content,
+        truncated=truncated,
+        contentType=getattr(stat, "content_type", None),
+        encoding=encoding,
+        size=getattr(stat, "size", None),
+    )

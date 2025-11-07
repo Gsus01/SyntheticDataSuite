@@ -1,15 +1,18 @@
 "use client";
 
 import React from "react";
-import type { Node } from "reactflow";
+import type { Edge, Node } from "reactflow";
 import { API_BASE } from "@/lib/api";
 import { NODE_TYPES } from "@/lib/flow-const";
 import type { FlowNodeData, NodeArtifact } from "@/types/flow";
+import { getOutputArtifacts, previewArtifact, type OutputArtifactInfo } from "@/lib/workflow";
 
 type NodeInspectorProps = {
   isOpen: boolean;
   node: Node<FlowNodeData> | null;
   sessionId: string;
+  nodes: Node<FlowNodeData>[];
+  edges: Edge[];
   onChange: (nodeId: string, updater: (data: FlowNodeData) => FlowNodeData) => void;
 };
 
@@ -24,6 +27,40 @@ type ArtifactUploadResponsePayload = {
   original_filename?: string | null;
   originalFilename?: string | null;
 };
+
+type DownloadState = {
+  loading: boolean;
+  error: string | null;
+};
+
+type OutputPreviewState = {
+  loading: boolean;
+  error: string | null;
+  content: string | null;
+  truncated: boolean;
+  contentType?: string | null;
+};
+
+function extractFilenameFromDisposition(disposition: string | null): string | null {
+  if (!disposition) return null;
+
+  const filenameStarMatch = disposition.match(/filename\*=([^;]+)/i);
+  if (filenameStarMatch && filenameStarMatch[1]) {
+    const value = filenameStarMatch[1].trim().replace(/^"|"$/g, "");
+    try {
+      return decodeURIComponent(value.replace(/^UTF-8''/i, ""));
+    } catch {
+      return value;
+    }
+  }
+
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+  if (filenameMatch && filenameMatch[1]) {
+    return filenameMatch[1].trim();
+  }
+
+  return null;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -79,13 +116,25 @@ function isEqualValue(a: unknown, b: unknown): boolean {
   return Object.is(a, b);
 }
 
-export default function NodeInspector({ isOpen, node, sessionId, onChange }: NodeInspectorProps) {
+export default function NodeInspector({
+  isOpen,
+  node,
+  sessionId,
+  nodes,
+  edges,
+  onChange,
+}: NodeInspectorProps) {
   const [structuredInputs, setStructuredInputs] = React.useState<Record<string, string>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
+  const [outputArtifacts, setOutputArtifacts] = React.useState<OutputArtifactInfo[] | null>(null);
+  const [outputLoading, setOutputLoading] = React.useState(false);
+  const [outputError, setOutputError] = React.useState<string | null>(null);
+  const [downloadState, setDownloadState] = React.useState<Record<string, DownloadState>>({});
+  const [previewStates, setPreviewStates] = React.useState<Record<string, OutputPreviewState>>({});
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -94,10 +143,61 @@ export default function NodeInspector({ isOpen, node, sessionId, onChange }: Nod
     setUploadError(null);
     setUploadSuccess(null);
     setUploading(false);
+    setOutputArtifacts(null);
+    setOutputLoading(false);
+    setOutputError(null);
+    setDownloadState({});
+    setPreviewStates({});
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }, [isOpen, node?.id]);
+
+  React.useEffect(() => {
+    if (!isOpen || !node || node.type !== NODE_TYPES.nodeOutput) {
+      setOutputArtifacts(null);
+      setOutputLoading(false);
+      setOutputError(null);
+      setDownloadState({});
+      setPreviewStates({});
+      return;
+    }
+
+    let cancelled = false;
+    async function loadArtifacts() {
+      setOutputLoading(true);
+      setOutputError(null);
+      try {
+        const artifacts = await getOutputArtifacts(
+          {
+            sessionId,
+            nodes,
+            edges,
+          },
+          node.id
+        );
+        if (!cancelled) {
+          setOutputArtifacts(artifacts);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Error obteniendo artefactos";
+          setOutputError(message);
+          setOutputArtifacts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setOutputLoading(false);
+        }
+      }
+    }
+
+    loadArtifacts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [edges, isOpen, node?.id, node?.type, nodes, sessionId]);
 
   const clearParameter = React.useCallback(
     (key: string) => {
@@ -262,7 +362,8 @@ export default function NodeInspector({ isOpen, node, sessionId, onChange }: Nod
 
   const uploadedArtifact = node?.data.uploadedArtifact;
   const hasBucketKeyParams = rawKeys.includes("bucket") && rawKeys.includes("key");
-  const shouldShowUpload = Boolean(node && (node.type === NODE_TYPES.nodeInput || hasBucketKeyParams));
+  const isOutputNode = node?.type === NODE_TYPES.nodeOutput;
+  const shouldShowUpload = Boolean(node && !isOutputNode && (node.type === NODE_TYPES.nodeInput || hasBucketKeyParams));
 
   const handleUploadCardClick = React.useCallback(() => {
     if (uploading) return;
@@ -278,6 +379,115 @@ export default function NodeInspector({ isOpen, node, sessionId, onChange }: Nod
     },
     [handleUploadCardClick]
   );
+
+  const handleDownloadArtifact = React.useCallback(async (artifact: OutputArtifactInfo) => {
+    const key = artifact.key;
+    setDownloadState((prev) => ({
+      ...prev,
+      [key]: {
+        loading: true,
+        error: null,
+      },
+    }));
+
+    let errorMessage: string | null = null;
+
+    try {
+      const url = new URL(`${API_BASE}/artifacts/download`);
+      url.searchParams.set("bucket", artifact.bucket);
+      url.searchParams.set("key", artifact.key);
+
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const text = await response.text();
+          if (text) detail = text;
+        } catch {
+          // ignore
+        }
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition");
+      const fallback = artifact.sourceArtifactName || artifact.key.split("/").pop() || "artifact";
+      const filename = extractFilenameFromDisposition(disposition) || fallback;
+
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : "Error descargando artefacto";
+    }
+
+    setDownloadState((prev) => ({
+      ...prev,
+      [key]: {
+        loading: false,
+        error: errorMessage,
+      },
+    }));
+  }, []);
+
+  const handleTogglePreview = React.useCallback(async (artifact: OutputArtifactInfo) => {
+    const key = artifact.key;
+    let shouldFetch = false;
+
+    setPreviewStates((prev) => {
+      const current = prev[key];
+      if (current && current.content && !current.loading && !current.error) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+
+      shouldFetch = true;
+      return {
+        ...prev,
+        [key]: {
+          loading: true,
+          error: null,
+          content: current?.content ?? null,
+          truncated: current?.truncated ?? false,
+          contentType: current?.contentType,
+        },
+      };
+    });
+
+    if (!shouldFetch) return;
+
+    try {
+      const result = await previewArtifact(artifact.bucket, artifact.key);
+      setPreviewStates((prev) => ({
+        ...prev,
+        [key]: {
+          loading: false,
+          error: null,
+          content: result.content,
+          truncated: result.truncated,
+          contentType: result.contentType ?? undefined,
+        },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error obteniendo previsualización";
+      setPreviewStates((prev) => ({
+        ...prev,
+        [key]: {
+          loading: false,
+          error: message,
+          content: null,
+          truncated: false,
+          contentType: undefined,
+        },
+      }));
+    }
+  }, []);
 
   if (!isOpen) {
     return null;
@@ -457,6 +667,110 @@ export default function NodeInspector({ isOpen, node, sessionId, onChange }: Nod
         <div className="text-xs text-gray-500">Selecciona un nodo en el lienzo para editar sus parámetros.</div>
       ) : (
         <div className="flex flex-col gap-4">
+          {isOutputNode && (
+            <div className="rounded border border-indigo-200 bg-indigo-50 p-3 text-xs text-gray-700">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
+                Artefactos de salida
+              </div>
+              {outputLoading && <span className="text-[11px] text-gray-500">Buscando artefactos…</span>}
+              {outputError && <span className="text-[11px] text-red-600">{outputError}</span>}
+              {!outputLoading && !outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
+                <span className="text-[11px] text-gray-500">
+                  Conecta este nodo a la salida de otro para ver los artefactos generados.
+                </span>
+              )}
+              {outputArtifacts?.map((artifact) => {
+                const downloadStatus = downloadState[artifact.key] ?? { loading: false, error: null };
+                const previewState = previewStates[artifact.key];
+                return (
+                  <div
+                    key={artifact.key}
+                    className="mt-2 rounded border border-indigo-100 bg-white p-2 text-[11px] text-gray-700 shadow-sm"
+                  >
+                    <div className="text-xs font-semibold text-gray-600">
+                      {artifact.sourceArtifactName || artifact.inputName}
+                    </div>
+                    <div className="mt-1 space-y-1 text-[11px] text-gray-600">
+                      <div>
+                        <span className="font-semibold text-gray-500">Bucket:</span> {artifact.bucket}
+                      </div>
+                      <div className="break-all">
+                        <span className="font-semibold text-gray-500">Key:</span> {artifact.key}
+                      </div>
+                      {artifact.size !== undefined && artifact.size !== null && (
+                        <div>
+                          <span className="font-semibold text-gray-500">Tamaño:</span> {formatBytes(artifact.size)}
+                        </div>
+                      )}
+                      {artifact.contentType && (
+                        <div>
+                          <span className="font-semibold text-gray-500">Content-Type:</span> {artifact.contentType}
+                        </div>
+                      )}
+                      {artifact.sourceNodeId && (
+                        <div>
+                          <span className="font-semibold text-gray-500">Origen:</span> {artifact.sourceNodeId}
+                        </div>
+                      )}
+                      {!artifact.exists && (
+                        <div className="text-amber-600">
+                          El archivo aún no está disponible en MinIO. Ejecuta el workflow y vuelve a intentarlo.
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadArtifact(artifact)}
+                        disabled={downloadStatus.loading}
+                        className={`rounded border px-2 py-1 text-[11px] uppercase tracking-wide shadow-sm transition ${
+                          downloadStatus.loading
+                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500"
+                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"
+                        }`}
+                      >
+                        {downloadStatus.loading ? "Descargando…" : "Descargar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePreview(artifact)}
+                        disabled={previewState?.loading}
+                        className={`rounded border px-2 py-1 text-[11px] uppercase tracking-wide shadow-sm transition ${
+                          previewState?.loading
+                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500"
+                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"
+                        }`}
+                      >
+                        {previewState?.loading
+                          ? "Cargando…"
+                          : previewState?.content && !previewState.error
+                          ? "Ocultar previsualización"
+                          : "Previsualizar"}
+                      </button>
+                    </div>
+                    {downloadStatus.error && (
+                      <div className="mt-1 text-[11px] text-red-600">{downloadStatus.error}</div>
+                    )}
+                    {previewState?.error && (
+                      <div className="mt-1 text-[11px] text-red-600">{previewState.error}</div>
+                    )}
+                    {previewState?.content && !previewState.loading && !previewState.error && (
+                      <div className="mt-2 max-h-48 overflow-auto rounded bg-gray-900 p-2 font-mono text-[11px] leading-relaxed text-gray-100">
+                        <pre className="whitespace-pre-wrap break-words text-gray-100">
+                          {previewState.content}
+                        </pre>
+                        {previewState.truncated && (
+                          <span className="mt-1 block text-[10px] text-amber-300">
+                            Contenido truncado. Descarga el archivo para verlo completo.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {shouldShowUpload && (
             <div
               className={`rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 transition-colors ${

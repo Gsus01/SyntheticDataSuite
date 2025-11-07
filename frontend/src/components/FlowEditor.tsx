@@ -18,7 +18,7 @@ import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNod
 import NodeInspector from "@/components/NodeInspector";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 import type { FlowNodeData } from "@/types/flow";
-import { exportWorkflowYAML } from "@/lib/workflow";
+import { submitWorkflow, type SubmitWorkflowResult } from "@/lib/workflow";
 
 let id = 0;
 const getId = () => `dnd_${id++}`;
@@ -44,8 +44,9 @@ function EditorInner() {
   const { project } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const sessionId = React.useMemo(() => generateSessionId(), []);
-  const [downloading, setDownloading] = React.useState(false);
-  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [submitResult, setSubmitResult] = React.useState<SubmitWorkflowResult | null>(null);
 
   const onConnect = useCallback(
     (params: Edge | Connection) =>
@@ -161,20 +162,22 @@ function EditorInner() {
     [setNodes]
   );
 
-  const handleExportClick = useCallback(async () => {
-    setDownloading(true);
-    setDownloadError(null);
+  const handleSubmitClick = useCallback(async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    setSubmitResult(null);
     try {
-      await exportWorkflowYAML({
+      const result = await submitWorkflow({
         sessionId,
         nodes,
         edges,
       });
+      setSubmitResult(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Error generando YAML";
-      setDownloadError(message);
+      const message = error instanceof Error ? error.message : "Error enviando workflow";
+      setSubmitError(message);
     } finally {
-      setDownloading(false);
+      setSubmitting(false);
     }
   }, [edges, nodes, sessionId]);
 
@@ -214,22 +217,38 @@ function EditorInner() {
           isOpen={Boolean(selectedNode)}
           node={selectedNode}
           sessionId={sessionId}
+          nodes={nodes}
+          edges={edges}
           onChange={handleNodeDataChange}
         />
         <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
           <button
             type="button"
-            onClick={handleExportClick}
-            disabled={downloading}
+            onClick={handleSubmitClick}
+            disabled={submitting}
             className={`rounded bg-indigo-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 ${
-              downloading ? "cursor-not-allowed opacity-70" : ""
+              submitting ? "cursor-not-allowed opacity-70" : ""
             }`}
           >
-            {downloading ? "Generando…" : "Exportar YAML"}
+            {submitting ? "Enviando…" : "Enviar Workflow"}
           </button>
-          {downloadError && (
+          {submitError && (
             <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 shadow-sm">
-              {downloadError}
+              {submitError}
+            </div>
+          )}
+          {submitResult && (
+            <div className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 shadow-sm">
+              Workflow {submitResult.workflowName} enviado en namespace {submitResult.namespace}.<br />
+              Manifiesto guardado en {submitResult.bucket}/{submitResult.key}.
+              {submitResult.cliOutput ? (
+                <>
+                  <br />
+                  <span className="block truncate text-[10px] text-emerald-600">
+                    {submitResult.cliOutput}
+                  </span>
+                </>
+              ) : null}
             </div>
           )}
         </div>

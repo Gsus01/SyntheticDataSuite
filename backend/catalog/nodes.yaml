@@ -184,3 +184,14 @@ nodes:
         - name: synthetic-data
           path: /tmp/output
     limits: {}
+
+  - name: data-output
+    type: output
+    version: v1
+    parameters: []
+    artifacts:
+      inputs:
+        - name: final-artifact
+          path: /tmp/output/final_artifact
+      outputs: []
+    limits: {}

@@ -98,6 +98,7 @@ class NodePlan(BaseModel):
     slug: str
     template: NodeTemplate
     is_input: bool
+    is_output: bool = False
     outputs: Dict[str, ArtifactPlan]
     input_bindings: Dict[str, ArtifactBinding] = Field(default_factory=dict)
     dependencies: List[str] = Field(default_factory=list)
@@ -114,7 +115,7 @@ class WorkflowPlan(BaseModel):
     nodes: Dict[str, NodePlan]
 
     def tasks(self) -> List[NodePlan]:
-        return [plan for plan in self.nodes.values() if not plan.is_input]
+        return [plan for plan in self.nodes.values() if not plan.is_input and not plan.is_output]
 
 
 class WorkflowBuilderError(RuntimeError):
@@ -386,7 +387,17 @@ def build_workflow_plan(payload: WorkflowGraphPayload) -> WorkflowPlan:
                 slug=slug,
                 template=template,
                 is_input=True,
+                is_output=False,
                 outputs=outputs,
+            )
+        elif template.type == "output":
+            plan = NodePlan(
+                node_id=node.id,
+                slug=slug,
+                template=template,
+                is_input=False,
+                is_output=True,
+                outputs={},
             )
         else:
             outputs = _build_output_plan(payload.session_id, node, template, bucket)
@@ -402,6 +413,7 @@ def build_workflow_plan(payload: WorkflowGraphPayload) -> WorkflowPlan:
                 slug=slug,
                 template=template,
                 is_input=False,
+                is_output=False,
                 outputs=outputs,
                 config_inputs=config_inputs,
             )
@@ -523,7 +535,7 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
     for node_plan in plan.tasks():
         task: Dict[str, object] = {
             "name": node_plan.slug,
-            "template": node_plan.template.name,
+            "template": node_plan.slug,
         }
 
         if node_plan.dependencies:
@@ -558,22 +570,36 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
 
     manifest["spec"]["serviceAccountName"] = SERVICE_ACCOUNT_NAME
 
-    selected_template_names: set[str] = set()
-    selected_templates: List[Dict[str, Any]] = []
+    customized_templates: List[Dict[str, Any]] = []
     for node_plan in plan.tasks():
-        template_name = node_plan.template.name
-        if template_name in selected_template_names:
-            continue
-        registry_entry = _WORKFLOW_TEMPLATE_REGISTRY.get(template_name)
+        registry_entry = _WORKFLOW_TEMPLATE_REGISTRY.get(node_plan.template.name)
         if not registry_entry:
             continue
-        template_spec = deepcopy(registry_entry)
-        template_spec["name"] = template_name
-        selected_templates.append(template_spec)
-        selected_template_names.add(template_name)
 
-    if selected_templates:
-        manifest["spec"]["templates"].extend(selected_templates)
+        template_spec = deepcopy(registry_entry)
+        template_spec["name"] = node_plan.slug
+
+        outputs_section = template_spec.get("outputs", {})
+        artifacts_section = outputs_section.get("artifacts", [])
+        if isinstance(artifacts_section, list):
+            for artifact_spec in artifacts_section:
+                if not isinstance(artifact_spec, dict):
+                    continue
+                artifact_name = artifact_spec.get("name")
+                if not isinstance(artifact_name, str):
+                    continue
+                plan_artifact = node_plan.outputs.get(artifact_name)
+                if not plan_artifact:
+                    continue
+
+                s3_section = artifact_spec.setdefault("s3", {})
+                if isinstance(s3_section, dict):
+                    s3_section["key"] = plan_artifact.key
+
+        customized_templates.append(template_spec)
+
+    if customized_templates:
+        manifest["spec"]["templates"].extend(customized_templates)
 
     return manifest
 

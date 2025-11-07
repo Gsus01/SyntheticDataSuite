@@ -102,9 +102,9 @@ MINIKUBE_PROFILE=devbox K8S_CONTEXT=minikube \
   ./scripts/dev/k8s-up.sh
 ```
 
-### Backend y MinIO
+### Backend, MinIO y Argo CLI
 
-El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend. Las variables más importantes son:
+El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y ahora también para guardar el manifiesto del workflow antes de enviarlo a Argo. Las variables más importantes relacionadas con MinIO son:
 
 - `MINIO_ENDPOINT` — endpoint del servicio S3 (por defecto `localhost:9000`)
 - `MINIO_ACCESS_KEY` — access key obligatoria
@@ -129,20 +129,32 @@ sessions/<sessionId>/nodes/<nodeId>/<nombre>-<uuid>.<ext>
 
 El `sessionId` se genera en el navegador en cada carga del editor y `nodeId` corresponde al identificador del nodo (o su `templateName` cuando aplica). De esta forma todos los artefactos quedan agrupados por sesión y nodo sin necesidad de configurar buckets adicionales.
 
-### Exportar el DAG generado en el canvas
+Además, el backend ejecuta directamente `argo submit` usando el manifiesto generado. Para ello necesita acceso al binario `argo` y permite configurarlo mediante estas variables:
 
-El editor (`frontend`) permite descargar un flujo compatible con Argo usando el botón **Exportar YAML**. El proceso es:
+- `ARGO_CLI_PATH` — ruta al binario (`argo` por defecto)
+- `ARGO_NAMESPACE` — namespace de Kubernetes donde se envían los workflows (`argo` por defecto)
+- `ARGO_SUBMIT_EXTRA_ARGS` — cadena opcional con flags extra (por ejemplo `--serviceaccount custom-sa`)
+
+La respuesta del endpoint incluye el nombre del workflow lanzado, el namespace y la ruta dentro de MinIO donde se guardó el YAML (`sessions/<sessionId>/workflow/<filename>`), para poder consultarlo más adelante si es necesario.
+
+### Enviar el DAG generado en el canvas
+
+El editor (`frontend`) envía el flujo directamente a Argo usando el botón **Enviar Workflow**. El proceso es:
 
 1. Construye el flujo en el canvas conectando nodos del catálogo.
 2. Sube los artefactos necesarios a través de los nodos de entrada.
-3. Pulsa **Exportar YAML** (parte superior derecha). El frontend envía el grafo actual y el `sessionId` al backend.
-4. El backend genera un Workflow de Argo con:
-   - Los artefactos iniciales referenciados desde MinIO (`sessions/<sessionId>/nodes/...`).
-   - Las dependencias entre nodos (tareas) según las conexiones realizadas.
-   - Los ficheros de configuración de cada nodo (se construyen a partir de los parámetros del inspector, se suben a MinIO y se inyectan como artefactos de entrada en el DAG).
-   - Un `generateName` prefijado con `sds-` listo para `kubectl apply -f <yaml>` o `argo submit`.
+3. Pulsa **Enviar Workflow** (parte superior derecha). El frontend envía el grafo actual y el `sessionId` al backend.
+4. El backend genera el Workflow de Argo, guarda el YAML en MinIO bajo `sessions/<sessionId>/workflow/<filename>` y ejecuta `argo submit` en el namespace configurado.
+5. La interfaz muestra el nombre del workflow creado y la ubicación del manifiesto en MinIO para referencia rápida.
 
 > **Nota:** Los `templateRef` del YAML apuntan a plantillas nombradas igual que los nodos del catálogo. Asegúrate de que esas plantillas estén registradas en tu clúster (o ajusta el YAML antes de enviarlo a Argo).
+
+### Nodos de salida y previsualización de artefactos
+
+- El catálogo incluye un nodo `data-output` de tipo salida. Arrástralo al lienzo y conéctalo a la salida de cualquier nodo que produzca artefactos.
+- El inspector muestra la ruta esperada en MinIO (`bucket` y `key`), así como metadatos básicos (tamaño, content-type, nodo de origen).
+- Desde el inspector puedes descargar el fichero directamente (`GET /artifacts/download`) o solicitar una previsualización de hasta 64 KB (`GET /artifacts/preview`). Los ficheros de texto (`.csv`, `.json`, etc.) se renderizan inline; si el contenido es mayor, se indica que está truncado.
+- La aplicación consulta automáticamente las ubicaciones con `POST /workflow/output-artifacts`, reutilizando el mismo grafo que se envía a Argo para asegurar que la ruta generada es exactamente la misma que usará el workflow.
 
 
 ---
