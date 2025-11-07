@@ -6,6 +6,7 @@ import os
 import threading
 import re
 from functools import lru_cache
+from io import BytesIO
 from typing import Final
 
 from minio import Minio
@@ -13,7 +14,7 @@ from minio.error import S3Error
 
 _client_lock = threading.Lock()
 _DEFAULT_ENDPOINT: Final[str] = "localhost:9000"
-_DEFAULT_BUCKET: Final[str] = "artifacts-input"
+_DEFAULT_BUCKET: Final[str] = "argo-artifacts"
 
 
 def _get_env_bool(name: str, default: bool = False) -> bool:
@@ -98,5 +99,23 @@ def build_session_node_prefix(session_id: str, node_id: str) -> str:
     session_part = sanitize_path_segment(session_id, "session")
     node_part = sanitize_path_segment(node_id, "node")
     return f"sessions/{session_part}/nodes/{node_part}"
+
+
+def upload_bytes(
+    client: Minio,
+    bucket_name: str,
+    object_name: str,
+    data: bytes,
+    content_type: str = "application/octet-stream",
+) -> None:
+    ensure_bucket(client, bucket_name)
+    buffer = BytesIO(data)
+    client.put_object(
+        bucket_name,
+        object_name,
+        buffer,
+        length=len(data),
+        content_type=content_type,
+    )
 
 

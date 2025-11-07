@@ -18,6 +18,7 @@ import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNod
 import NodeInspector from "@/components/NodeInspector";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 import type { FlowNodeData } from "@/types/flow";
+import { exportWorkflowYAML } from "@/lib/workflow";
 
 let id = 0;
 const getId = () => `dnd_${id++}`;
@@ -43,6 +44,8 @@ function EditorInner() {
   const { project } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const sessionId = React.useMemo(() => generateSessionId(), []);
+  const [downloading, setDownloading] = React.useState(false);
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
 
   const onConnect = useCallback(
     (params: Edge | Connection) =>
@@ -158,6 +161,23 @@ function EditorInner() {
     [setNodes]
   );
 
+  const handleExportClick = useCallback(async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await exportWorkflowYAML({
+        sessionId,
+        nodes,
+        edges,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error generando YAML";
+      setDownloadError(message);
+    } finally {
+      setDownloading(false);
+    }
+  }, [edges, nodes, sessionId]);
+
   return (
     <div className="flex h-screen w-full">
       <Sidebar />
@@ -196,6 +216,23 @@ function EditorInner() {
           sessionId={sessionId}
           onChange={handleNodeDataChange}
         />
+        <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={handleExportClick}
+            disabled={downloading}
+            className={`rounded bg-indigo-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 ${
+              downloading ? "cursor-not-allowed opacity-70" : ""
+            }`}
+          >
+            {downloading ? "Generando…" : "Exportar YAML"}
+          </button>
+          {downloadError && (
+            <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 shadow-sm">
+              {downloadError}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

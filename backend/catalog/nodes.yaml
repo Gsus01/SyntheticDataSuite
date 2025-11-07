@@ -66,6 +66,8 @@ nodes:
       inputs:
         - name: processed-data
           path: /tmp/input
+        - name: training-gaussian-process-config
+          path: /tmp/config/training_gaussian_process.json
       outputs:
         - name: trained-model
           path: /tmp/output
@@ -80,6 +82,8 @@ nodes:
       inputs:
         - name: trained-model
           path: /tmp/input
+        - name: generation-gaussian-process-config
+          path: /tmp/config/generation_gaussian_process.json
       outputs:
         - name: synthetic-data
           path: /tmp/output
@@ -94,6 +98,8 @@ nodes:
       inputs:
         - name: processed-data
           path: /tmp/input
+        - name: training-copulas-config
+          path: /tmp/config/training_copulas.json
       outputs:
         - name: trained-model
           path: /tmp/output
@@ -108,6 +114,8 @@ nodes:
       inputs:
         - name: trained-model
           path: /tmp/input
+        - name: generation-copulas-config
+          path: /tmp/config/generation_copulas.json
       outputs:
         - name: synthetic-data
           path: /tmp/output
@@ -122,6 +130,8 @@ nodes:
       inputs:
         - name: processed-data
           path: /tmp/input
+        - name: training-boltzman-machines-config
+          path: /tmp/config/training_boltzman_machines.json
       outputs:
         - name: trained-model
           path: /tmp/output
@@ -136,6 +146,8 @@ nodes:
       inputs:
         - name: trained-model
           path: /tmp/input
+        - name: generation-boltzman-machines-config
+          path: /tmp/config/generation_boltzman_machines.json
       outputs:
         - name: synthetic-data
           path: /tmp/output
@@ -150,6 +162,8 @@ nodes:
       inputs:
         - name: processed-data
           path: /tmp/input
+        - name: training-bayesian-networks-config
+          path: /tmp/config/training_bayesian_networks.json
       outputs:
         - name: trained-model
           path: /tmp/output
@@ -164,6 +178,8 @@ nodes:
       inputs:
         - name: trained-model
           path: /tmp/input
+        - name: generation-bayesian-networks-config
+          path: /tmp/config/generation_bayesian_networks.json
       outputs:
         - name: synthetic-data
           path: /tmp/output

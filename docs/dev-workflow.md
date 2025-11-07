@@ -111,7 +111,7 @@ El backend necesita credenciales de MinIO para poder aceptar las subidas de arch
 - `MINIO_SECRET_KEY` — secret key obligatoria
 - `MINIO_SECURE` — `false` por defecto (útil para HTTPS en entornos reales)
 - `MINIO_REGION` — opcional, sólo si tu MinIO/S3 la requiere
-- `MINIO_INPUT_BUCKET` — bucket por defecto donde se guardan los ficheros subidos (`artifacts-input` si no se configura)
+- `MINIO_INPUT_BUCKET` — bucket por defecto donde se guardan los ficheros subidos (`argo-artifacts` si no se configura)
 
 El backend crea automáticamente `MINIO_INPUT_BUCKET` si no existe. En local, cuando usas los manifests incluidos, las credenciales por defecto son `minioadmin`/`minioadmin`:
 
@@ -128,6 +128,21 @@ sessions/<sessionId>/nodes/<nodeId>/<nombre>-<uuid>.<ext>
 ```
 
 El `sessionId` se genera en el navegador en cada carga del editor y `nodeId` corresponde al identificador del nodo (o su `templateName` cuando aplica). De esta forma todos los artefactos quedan agrupados por sesión y nodo sin necesidad de configurar buckets adicionales.
+
+### Exportar el DAG generado en el canvas
+
+El editor (`frontend`) permite descargar un flujo compatible con Argo usando el botón **Exportar YAML**. El proceso es:
+
+1. Construye el flujo en el canvas conectando nodos del catálogo.
+2. Sube los artefactos necesarios a través de los nodos de entrada.
+3. Pulsa **Exportar YAML** (parte superior derecha). El frontend envía el grafo actual y el `sessionId` al backend.
+4. El backend genera un Workflow de Argo con:
+   - Los artefactos iniciales referenciados desde MinIO (`sessions/<sessionId>/nodes/...`).
+   - Las dependencias entre nodos (tareas) según las conexiones realizadas.
+   - Los ficheros de configuración de cada nodo (se construyen a partir de los parámetros del inspector, se suben a MinIO y se inyectan como artefactos de entrada en el DAG).
+   - Un `generateName` prefijado con `sds-` listo para `kubectl apply -f <yaml>` o `argo submit`.
+
+> **Nota:** Los `templateRef` del YAML apuntan a plantillas nombradas igual que los nodos del catálogo. Asegúrate de que esas plantillas estén registradas en tu clúster (o ajusta el YAML antes de enviarlo a Argo).
 
 
 ---

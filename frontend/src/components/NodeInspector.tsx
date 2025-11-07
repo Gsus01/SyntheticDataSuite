@@ -440,7 +440,7 @@ export default function NodeInspector({ isOpen, node, sessionId, onChange }: Nod
   };
 
   return (
-    <aside className="relative w-80 shrink-0 border-l border-gray-200 bg-white p-4 text-sm text-gray-800 shadow-xl">
+    <aside className="relative z-20 w-80 shrink-0 border-l border-gray-200 bg-white p-4 text-sm text-gray-800 shadow-xl">
       <div className="mb-4">
         <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Inspector</div>
         {node ? (
