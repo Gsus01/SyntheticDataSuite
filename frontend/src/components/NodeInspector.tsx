@@ -39,6 +39,7 @@ type OutputPreviewState = {
   content: string | null;
   truncated: boolean;
   contentType?: string | null;
+  limitedLines?: boolean;
 };
 
 function extractFilenameFromDisposition(disposition: string | null): string | null {
@@ -98,6 +99,20 @@ function formatBytes(size: number | null | undefined): string {
   }
   const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
+
+const PREVIEW_LINE_LIMIT = 100;
+
+function limitPreviewLines(content: string): { content: string; limitedLines: boolean } {
+  const lines = content.split(/\r?\n/);
+  if (lines.length <= PREVIEW_LINE_LIMIT) {
+    return { content, limitedLines: false };
+  }
+  const limitedContent = lines.slice(0, PREVIEW_LINE_LIMIT).join("\n");
+  return {
+    content: limitedContent,
+    limitedLines: true,
+  };
 }
 
 function isEqualValue(a: unknown, b: unknown): boolean {
@@ -197,7 +212,7 @@ export default function NodeInspector({
     return () => {
       cancelled = true;
     };
-  }, [edges, isOpen, node?.id, node?.type, nodes, sessionId]);
+  }, [edges, isOpen, node, node?.id, node?.type, nodes, sessionId]);
 
   const clearParameter = React.useCallback(
     (key: string) => {
@@ -357,7 +372,7 @@ export default function NodeInspector({
         event.target.value = "";
       }
     },
-    [defaults, node, nodeIdentifier, onChange, parameters, sessionId]
+    [node, nodeIdentifier, onChange, sessionId]
   );
 
   const uploadedArtifact = node?.data.uploadedArtifact;
@@ -435,20 +450,21 @@ export default function NodeInspector({
     }));
   }, []);
 
-  const handleTogglePreview = React.useCallback(async (artifact: OutputArtifactInfo) => {
-    const key = artifact.key;
-    let shouldFetch = false;
+  const handleTogglePreview = React.useCallback(
+    async (artifact: OutputArtifactInfo) => {
+      const key = artifact.key;
+      const current = previewStates[key];
 
-    setPreviewStates((prev) => {
-      const current = prev[key];
       if (current && current.content && !current.loading && !current.error) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
+        setPreviewStates((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        return;
       }
 
-      shouldFetch = true;
-      return {
+      setPreviewStates((prev) => ({
         ...prev,
         [key]: {
           loading: true,
@@ -456,38 +472,41 @@ export default function NodeInspector({
           content: current?.content ?? null,
           truncated: current?.truncated ?? false,
           contentType: current?.contentType,
-        },
-      };
-    });
-
-    if (!shouldFetch) return;
-
-    try {
-      const result = await previewArtifact(artifact.bucket, artifact.key);
-      setPreviewStates((prev) => ({
-        ...prev,
-        [key]: {
-          loading: false,
-          error: null,
-          content: result.content,
-          truncated: result.truncated,
-          contentType: result.contentType ?? undefined,
+          limitedLines: current?.limitedLines ?? false,
         },
       }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Error obteniendo previsualización";
-      setPreviewStates((prev) => ({
-        ...prev,
-        [key]: {
-          loading: false,
-          error: message,
-          content: null,
-          truncated: false,
-          contentType: undefined,
-        },
-      }));
-    }
-  }, []);
+
+      try {
+        const result = await previewArtifact(artifact.bucket, artifact.key);
+        const { content: limitedContent, limitedLines } = limitPreviewLines(result.content);
+        setPreviewStates((prev) => ({
+          ...prev,
+          [key]: {
+            loading: false,
+            error: null,
+            content: limitedContent,
+            truncated: result.truncated || limitedLines,
+            contentType: result.contentType ?? undefined,
+            limitedLines,
+          },
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error obteniendo previsualización";
+        setPreviewStates((prev) => ({
+          ...prev,
+          [key]: {
+            loading: false,
+            error: message,
+            content: null,
+            truncated: false,
+            contentType: undefined,
+            limitedLines: false,
+          },
+        }));
+      }
+    },
+    [previewStates]
+  );
 
   if (!isOpen) {
     return null;
@@ -744,7 +763,7 @@ export default function NodeInspector({
                         {previewState?.loading
                           ? "Cargando…"
                           : previewState?.content && !previewState.error
-                          ? "Ocultar previsualización"
+                          ? "Ocultar"
                           : "Previsualizar"}
                       </button>
                     </div>
@@ -759,6 +778,11 @@ export default function NodeInspector({
                         <pre className="whitespace-pre-wrap break-words text-gray-100">
                           {previewState.content}
                         </pre>
+                        {previewState?.limitedLines && (
+                          <span className="mt-1 block text-[10px] text-gray-400">
+                            Se muestran las primeras {PREVIEW_LINE_LIMIT} líneas del artefacto.
+                          </span>
+                        )}
                         {previewState.truncated && (
                           <span className="mt-1 block text-[10px] text-amber-300">
                             Contenido truncado. Descarga el archivo para verlo completo.
@@ -875,4 +899,3 @@ export default function NodeInspector({
     </aside>
   );
 }
-

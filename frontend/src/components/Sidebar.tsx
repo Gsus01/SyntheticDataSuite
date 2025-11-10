@@ -5,17 +5,6 @@ import NodeCard from "@/components/NodeCard";
 import { API_BASE } from "@/lib/api";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 
-type Item = {
-  label: string;
-  type: NodeTypeId;
-};
-
-const baseItems: Item[] = [
-  { label: "Input Node", type: NODE_TYPES.nodeInput },
-  { label: "Default Node", type: NODE_TYPES.nodeDefault },
-  { label: "Output Node", type: NODE_TYPES.nodeOutput },
-];
-
 type ApiArtifact = { name: string; path?: string };
 type ApiNodeTemplate = {
   name: string;
@@ -26,13 +15,6 @@ type ApiNodeTemplate = {
   version?: string;
   parameter_defaults?: Record<string, unknown>;
 };
-
-function onDragStart(event: React.DragEvent<HTMLDivElement>, nodeType: Item["type"], label?: string) {
-  event.dataTransfer.setData(DND_MIME, nodeType);
-  if (label) event.dataTransfer.setData("text/plain", label);
-  event.dataTransfer.setData(NODE_META_MIME, JSON.stringify({ tone: "other" }));
-  event.dataTransfer.effectAllowed = "move";
-}
 
 function inferRfType(tpl: ApiNodeTemplate): NodeTypeId {
   const inputs = tpl.artifacts?.inputs?.length ?? 0;
@@ -124,32 +106,6 @@ export default function Sidebar() {
     <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
       <div className="mb-3 font-medium text-gray-600 uppercase tracking-wide">Nodos</div>
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pr-1">
-        {/* Base nodes for prototyping */}
-        <Section title="Básicos">
-          {baseItems.map((item) => (
-            <div
-              key={item.type}
-              role="button"
-              tabIndex={0}
-              draggable
-              onDragStart={(e) => onDragStart(e, item.type, item.label)}
-              className="cursor-grab active:cursor-grabbing"
-            >
-              <NodeCard
-                label={item.label}
-                variant={
-                  item.type === "nodeInput"
-                    ? "input"
-                    : item.type === "nodeDefault"
-                    ? "default"
-                    : "output"
-                }
-                compact
-              />
-            </div>
-          ))}
-        </Section>
-
         {/* Catalog from backend */}
         <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
           Catálogo
