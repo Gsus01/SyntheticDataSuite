@@ -147,7 +147,22 @@ El editor (`frontend`) envía el flujo directamente a Argo usando el botón **En
 4. El backend genera el Workflow de Argo, guarda el YAML en MinIO bajo `sessions/<sessionId>/workflow/<filename>` y ejecuta `argo submit` en el namespace configurado.
 5. La interfaz muestra el nombre del workflow creado y la ubicación del manifiesto en MinIO para referencia rápida.
 
+Además, el editor dispone ahora de una terminal inferior plegable que se abre automáticamente tras cada envío y durante la ejecución. Los pods continúan archivando sus logs en MinIO, pero la interfaz los obtiene en tiempo (casi) real consultando la API de Argo (`GET /workflow/logs/stream`), que recibe el `workflowName`, un cursor Base64 incremental y parámetros opcionales como `namespace`, `tailLines` o `container`.
+
 > **Nota:** Los `templateRef` del YAML apuntan a plantillas nombradas igual que los nodos del catálogo. Asegúrate de que esas plantillas estén registradas en tu clúster (o ajusta el YAML antes de enviarlo a Argo).
+
+#### Seguimiento de estado con la API de Argo Server
+
+El backend también consulta el estado de cada workflow usando directamente el API REST expuesto por `argo-server`. De esta forma, el canvas puede colorear cada nodo según su fase actual (`Pendiente`, `En ejecución`, `Completado`, `Error`, etc.) mientras el workflow avanza.
+
+Variables de entorno asociadas:
+
+- `ARGO_SERVER_BASE_URL` — URL base del servidor (por defecto `https://localhost:2746` si haces port-forward del `argo-server`)
+- `ARGO_SERVER_AUTH_TOKEN` — token Bearer opcional cuando el servidor exige autenticación
+- `ARGO_SERVER_INSECURE_SKIP_VERIFY` — ajústalo a `true` para omitir la verificación TLS en entornos dev/self-signed (se omite automáticamente cuando la URL apunta a `localhost`)
+- `ARGO_SERVER_TIMEOUT_SECONDS` — timeout en segundos para las peticiones al API (por defecto `10`)
+
+El frontend realiza polling periódico contra `GET /workflow/status`. Si el servidor todavía no registra el workflow y responde `404`, el backend lo traduce a un `null` y la UI reintenta automáticamente hasta que Argo lo cree. Una vez finalizada la ejecución, se conserva el último estado por nodo para revisión.
 
 ### Nodos de salida y previsualización de artefactos
 

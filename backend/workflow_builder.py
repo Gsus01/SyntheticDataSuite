@@ -24,6 +24,17 @@ from catalog_loader import ArtifactSpec, NodeTemplate, load_catalog
 
 
 SERVICE_ACCOUNT_NAME = os.getenv("ARGO_SERVICE_ACCOUNT", "default")
+_LABEL_MAX_LEN = 63
+
+
+def _sanitize_label_value(value: str, fallback: str) -> str:
+    candidate = sanitize_path_segment(value, fallback)
+    if len(candidate) > _LABEL_MAX_LEN:
+        trimmed = candidate[:_LABEL_MAX_LEN].rstrip("-._")
+        candidate = trimmed or candidate[:_LABEL_MAX_LEN]
+    candidate = candidate or sanitize_path_segment(fallback, fallback)
+    return candidate
+
 
 _TEMPLATE_REGISTRY_PATH = Path(__file__).resolve().parent / "workflow-templates.yaml"
 if not _TEMPLATE_REGISTRY_PATH.exists():
@@ -570,6 +581,16 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
 
     manifest["spec"]["serviceAccountName"] = SERVICE_ACCOUNT_NAME
 
+    session_label = _sanitize_label_value(plan.session_id, "session")
+
+    metadata = manifest.setdefault("metadata", {})
+    metadata_labels = metadata.setdefault("labels", {})
+    metadata_labels.setdefault("sds.dev/session", session_label)
+
+    spec_metadata = manifest["spec"].setdefault("podMetadata", {})
+    spec_metadata_labels = spec_metadata.setdefault("labels", {})
+    spec_metadata_labels.setdefault("sds.dev/session", session_label)
+
     customized_templates: List[Dict[str, Any]] = []
     for node_plan in plan.tasks():
         registry_entry = _WORKFLOW_TEMPLATE_REGISTRY.get(node_plan.template.name)
@@ -597,6 +618,21 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
                     s3_section["key"] = plan_artifact.key
 
         customized_templates.append(template_spec)
+
+        node_label = _sanitize_label_value(node_plan.slug, "node")
+        node_id_label = _sanitize_label_value(node_plan.node_id, "node")
+        template_spec["archiveLocation"] = {
+            "s3": {
+                "bucket": plan.bucket,
+                "key": f"sessions/{session_label}/nodes/{node_label}/logs/{{{{pod.name}}}}.log",
+            }
+        }
+
+        template_metadata = template_spec.setdefault("metadata", {})
+        template_labels = template_metadata.setdefault("labels", {})
+        template_labels.setdefault("sds.dev/session", session_label)
+        template_labels.setdefault("sds.dev/node", node_label)
+        template_labels.setdefault("sds.dev/node-id", node_id_label)
 
     if customized_templates:
         manifest["spec"]["templates"].extend(customized_templates)

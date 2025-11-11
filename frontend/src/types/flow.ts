@@ -6,6 +6,18 @@ export type NodeArtifact = {
   originalFilename?: string | null;
 };
 
+export type WorkflowNodeRuntimeStatus = {
+  slug: string;
+  phase?: string | null;
+  type?: string | null;
+  id?: string | null;
+  displayName?: string | null;
+  message?: string | null;
+  progress?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
+
 export type FlowNodeData = {
   label: string;
   tone?: string;
@@ -14,5 +26,6 @@ export type FlowNodeData = {
   parameterDefaults?: Record<string, unknown>;
   parameters?: Record<string, unknown>;
   uploadedArtifact?: NodeArtifact;
+  runtimeStatus?: WorkflowNodeRuntimeStatus;
 };
 

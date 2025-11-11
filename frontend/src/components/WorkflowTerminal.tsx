@@ -6,7 +6,6 @@ import type { Node } from "reactflow";
 import {
   fetchWorkflowLogs,
   type SubmitWorkflowResult,
-  type WorkflowLogChunk,
 } from "@/lib/workflow";
 import type { FlowNodeData } from "@/types/flow";
 
@@ -16,26 +15,15 @@ type WorkflowTerminalProps = {
   workflowName?: string | null;
   namespace?: string | null;
   nodeSlugMap?: Record<string, string> | null;
+  nodes: Node<FlowNodeData>[];
   submitting: boolean;
   submitResult: SubmitWorkflowResult | null;
   submitError: string | null;
-  nodes: Node<FlowNodeData>[];
-};
-
-type TerminalLine = {
-  id: string;
-  slug: string;
-  label: string;
-  color: string;
-  podName: string;
-  text: string;
-  timestamp: number;
 };
 
 const MIN_HEIGHT = 180;
 const MAX_HEIGHT = 560;
 const COLLAPSED_HEIGHT = 44;
-const MAX_LINES = 2000;
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -43,36 +31,424 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   second: "2-digit",
 });
 
-function sanitizeSegment(value: string | undefined | null, fallback: string): string {
-  const cleanValue = (value ?? "").trim();
-  const candidate = cleanValue
-    .replace(/[^0-9A-Za-z._-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-._]+|[-._]+$/g, "");
-  const sanitizedCandidate = candidate || fallback.trim();
-  const finalValue = sanitizedCandidate
-    .replace(/[^0-9A-Za-z._-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-._]+|[-._]+$/g, "");
-  return finalValue || "node";
-}
-
-function slugToColor(slug: string): string {
-  let hash = 0;
-  for (let i = 0; i < slug.length; i += 1) {
-    hash = (hash * 31 + slug.charCodeAt(i)) & 0xffffffff;
-  }
-  const hue = Math.abs(hash) % 360;
-  const saturation = 65;
-  const lightness = 50;
-  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-}
-
 function formatTimestamp(timestampMs: number): string {
   return timeFormatter.format(new Date(timestampMs));
 }
 
 const SCROLL_EPSILON = 32;
+const MAX_RENDERED_LOG_LINES = 2000;
+const NODE_FALLBACK_LABEL = "workflow";
+
+type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR" | "FATAL" | "LOG";
+
+type ParsedLogEntry = {
+  id: string;
+  lineNumber: number;
+  nodeLabel: string;
+  nodeColor: string;
+  levelLabel: LogLevel;
+  content: string;
+  timestamp?: string;
+};
+
+const nodeColorCache = new Map<string, string>();
+
+const LEVEL_CLASSNAMES: Record<LogLevel, string> = {
+  TRACE: "border-indigo-400/60 text-indigo-200 bg-indigo-500/10",
+  DEBUG: "border-sky-400/60 text-sky-200 bg-sky-500/10",
+  INFO: "border-emerald-400/60 text-emerald-200 bg-emerald-500/10",
+  WARN: "border-amber-500/60 text-amber-200 bg-amber-500/10",
+  ERROR: "border-rose-500/70 text-rose-200 bg-rose-500/10",
+  FATAL: "border-red-500/80 text-red-100 bg-red-500/20",
+  LOG: "border-gray-600 text-gray-300 bg-gray-800/40",
+};
+
+const LEVEL_TOKENS = ["TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR", "FATAL"];
+
+function stripAnsiCodes(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function normalizeHintKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^0-9a-z]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function resolveDisplayLabel(slug?: string | null, node?: Node<FlowNodeData>): string {
+  const explicitLabel = node?.data.label?.trim();
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+  const templateName = node?.data.templateName?.trim();
+  if (templateName) {
+    return templateName;
+  }
+  if (slug && slug.trim()) {
+    return humanizeSlug(slug.trim()) || slug.trim();
+  }
+  const fallbackId = node?.id?.trim();
+  if (fallbackId) {
+    return humanizeSlug(fallbackId) || fallbackId;
+  }
+  return NODE_FALLBACK_LABEL;
+}
+
+function buildNodeLabelHints(
+  nodeSlugMap?: Record<string, string> | null,
+  nodes?: Node<FlowNodeData>[]
+): Map<string, string> {
+  const hints = new Map<string, string>();
+  const nodeById = new Map<string, Node<FlowNodeData>>();
+  (nodes || []).forEach((node) => {
+    nodeById.set(node.id, node);
+  });
+
+  const register = (value?: string | null, label?: string | null) => {
+    if (!value || !label) return;
+    const normalized = normalizeHintKey(value);
+    if (normalized && !hints.has(normalized)) {
+      hints.set(normalized, label);
+    }
+  };
+
+  const addHint = (raw?: string | null, label?: string | null) => {
+    if (!raw || !label) return;
+    register(raw, label);
+    register(slugify(raw), label);
+    raw
+      .split(/[^0-9A-Za-z]+/)
+      .filter(Boolean)
+      .forEach((token) => register(token, label));
+  };
+
+  if (nodeSlugMap) {
+    Object.entries(nodeSlugMap).forEach(([nodeId, slug]) => {
+      const node = nodeById.get(nodeId);
+      const displayLabel = resolveDisplayLabel(slug, node);
+      addHint(slug, displayLabel);
+      addHint(nodeId, displayLabel);
+      addHint(node?.data.label, displayLabel);
+      addHint(node?.data.templateName, displayLabel);
+    });
+  }
+
+  (nodes || []).forEach((node) => {
+    const displayLabel = resolveDisplayLabel(nodeSlugMap?.[node.id], node);
+    addHint(node.id, displayLabel);
+    addHint(node.data.label, displayLabel);
+    addHint(node.data.templateName, displayLabel);
+    const slugged = slugify(displayLabel);
+    if (slugged) {
+      addHint(slugged, displayLabel);
+    }
+  });
+
+  return hints;
+}
+
+function humanizeSlug(value: string): string {
+  return value
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function colorForNode(label: string): string {
+  const cached = nodeColorCache.get(label);
+  if (cached) return cached;
+  let hash = 0;
+  for (let i = 0; i < label.length; i += 1) {
+    hash = (hash * 33 + label.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  const color = `hsl(${hue}, 60%, 62%)`;
+  nodeColorCache.set(label, color);
+  return color;
+}
+
+function normalizeLevelToken(token: string): LogLevel {
+  const upper = token.trim().toUpperCase();
+  if (upper === "WARNING") return "WARN";
+  if (LEVEL_TOKENS.includes(upper)) {
+    return (upper === "WARNING" ? "WARN" : (upper as LogLevel));
+  }
+  return "LOG";
+}
+
+function isLikelyLevelToken(token: string): boolean {
+  return normalizeLevelToken(token) !== "LOG";
+}
+
+function extractNodeSegment(line: string): { nodeLabel: string; remainder: string } {
+  const trimmed = line.trimStart();
+
+  const colonMatch = trimmed.match(/^[ \t]*([A-Za-z][A-Za-z0-9._-]{1,})(?::|\s+-)\s*(.*)$/);
+  if (colonMatch) {
+    return {
+      nodeLabel: colonMatch[1],
+      remainder: colonMatch[2] ?? "",
+    };
+  }
+
+  if (trimmed.startsWith("[")) {
+    const bracket = trimmed.match(/^\[([^\]]+)\]\s*(.*)$/);
+    if (bracket && !isLikelyLevelToken(bracket[1])) {
+      return {
+        nodeLabel: bracket[1],
+        remainder: bracket[2] ?? "",
+      };
+    }
+  }
+
+  return {
+    nodeLabel: NODE_FALLBACK_LABEL,
+    remainder: trimmed,
+  };
+}
+
+function deriveNodeLabel(rawLabel: string, hints: Map<string, string>): string {
+  const sanitized = rawLabel
+    .replace(/[^0-9A-Za-z._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "");
+
+  const tokens = sanitized.split("-").filter(Boolean);
+
+  const findHint = (token: string) => {
+    const normalized = normalizeHintKey(token);
+    return hints.get(normalized);
+  };
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    const candidate = tokens.slice(i).join("-");
+    const hint = findHint(candidate);
+    if (hint) {
+      return hint;
+    }
+    const trimmedDigits = candidate.replace(/(^\d+)|(\d+$)/g, "");
+    if (trimmedDigits) {
+      const trimmedHint = findHint(trimmedDigits);
+      if (trimmedHint) {
+        return trimmedHint;
+      }
+    }
+  }
+
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    const token = tokens[i];
+    if (/^[0-9]+$/.test(token) || /^[0-9a-f]{6,}$/i.test(token)) {
+      continue;
+    }
+    const hint = findHint(token) || findHint(token.replace(/^\d+|\d+$/g, ""));
+    if (hint) {
+      return hint;
+    }
+  }
+
+  const slugJoined = tokens.join("-");
+  const hintFull = findHint(slugJoined);
+  if (hintFull) {
+    return hintFull;
+  }
+
+  for (let i = tokens.length - 1; i >= 0; i -= 1) {
+    const candidate = tokens[i];
+    if (!candidate) continue;
+    if (/^[0-9]+$/.test(candidate)) continue;
+    if (/^[0-9a-f]{6,}$/i.test(candidate)) continue;
+    return humanizeSlug(candidate) || candidate;
+  }
+
+  return NODE_FALLBACK_LABEL;
+}
+
+function extractTimestampSegment(text: string): { timestamp?: string; remainder: string } {
+  const match = text.match(
+    /^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d{3})?)(?:\s*(?:-|–|—)\s*|\s+)(.*)$/
+  );
+  if (match) {
+    return {
+      timestamp: match[1],
+      remainder: match[2] ?? "",
+    };
+  }
+
+  const timeKv = text.match(/\btime="?([0-9T:.\-+Z]+)"?/i);
+  if (timeKv) {
+    const idx = timeKv.index ?? 0;
+    const end = idx + timeKv[0].length;
+    const before = text.slice(0, idx).trimEnd();
+    const after = text.slice(end).trimStart();
+    const remainder = [before, after].filter(Boolean).join(" ").trim();
+    return {
+      timestamp: timeKv[1],
+      remainder: remainder || "",
+    };
+  }
+
+  return { remainder: text };
+}
+
+function formatInlineTimestamp(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const normalized = raw.replace(",", ".").replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  if (!Number.isNaN(parsed)) {
+    const date = new Date(parsed);
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    const ss = String(date.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  }
+  const fallback = raw.match(/(\d{2}:\d{2}:\d{2})/);
+  return fallback ? fallback[1] : raw;
+}
+
+function extractLevelSegment(text: string): { levelLabel: LogLevel; remainder: string } {
+  const working = text.trimStart();
+
+  const bracket = working.match(/^\[([^\]]+)\]\s*(.*)$/);
+  if (bracket && isLikelyLevelToken(bracket[1])) {
+    return {
+      levelLabel: normalizeLevelToken(bracket[1]),
+      remainder: bracket[2] ?? "",
+    };
+  }
+
+  const prefix = working.match(/^(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b[:\-]?\s*(.*)$/i);
+  if (prefix) {
+    return {
+      levelLabel: normalizeLevelToken(prefix[1]),
+      remainder: prefix[2] ?? "",
+    };
+  }
+
+  const inline = working.match(
+    /^(.*?)(?:\s+-\s+|\s+)(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s*-\s*(.*)$/i
+  );
+  if (inline) {
+    const prefixText = inline[1].trim();
+    const suffixText = inline[3].trimStart();
+    const remainder = prefixText && suffixText ? `${prefixText} ${suffixText}` : prefixText || suffixText;
+    return {
+      levelLabel: normalizeLevelToken(inline[2]),
+      remainder: remainder ?? "",
+    };
+  }
+
+  const kv = working.match(/\b(level|lvl)\s*[:=]\s*(trace|debug|info|warn|warning|error|fatal)\b/i);
+  if (kv) {
+    const idx = kv.index ?? 0;
+    const before = working.slice(0, idx).trimEnd();
+    const after = working.slice(idx + kv[0].length).trimStart();
+    const remainder = `${before}${before && after ? " " : ""}${after}`.trimStart();
+    return {
+      levelLabel: normalizeLevelToken(kv[2]),
+      remainder,
+    };
+  }
+
+  return {
+    levelLabel: "LOG",
+    remainder: working,
+  };
+}
+
+function simplifyKeyValueContent(text: string): string {
+  const hasKeyValue = /\b[A-Za-z_][\w-]*=/.test(text);
+  if (!hasKeyValue) {
+    return text;
+  }
+
+  let message: string | null = null;
+  const extras: string[] = [];
+  const regex = /\b([A-Za-z_][\w-]*)=("[^"]*"|<[^>]+>|[^\s"]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    const key = match[1].toLowerCase();
+    let value = match[2];
+    if (value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1);
+    }
+    if (key === "time") {
+      continue;
+    }
+    if (key === "msg") {
+      message = value;
+    } else {
+      extras.push(`${match[1]}=${value}`);
+    }
+  }
+
+  if (!message && !extras.length) {
+    return text.trim();
+  }
+
+  const base = (message ?? "").trim();
+  const extraText = extras.length ? `(${extras.join(" ")})` : "";
+  return [base, extraText].filter(Boolean).join(" ").trim();
+}
+
+function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLogEntry[] {
+  if (!raw) return [];
+  const lines = raw.split(/\r?\n/);
+  const total = lines.length;
+  const start = Math.max(0, total - MAX_RENDERED_LOG_LINES);
+  const sliced = lines.slice(start);
+  const assignments = new Map<string, string>();
+  const baseCounts = new Map<string, number>();
+
+  const assignLabel = (rawKey: string, baseLabel: string) => {
+    const normalizedRaw = normalizeHintKey(rawKey || baseLabel);
+    const existing = assignments.get(normalizedRaw);
+    if (existing) {
+      return existing;
+    }
+    const nextCount = (baseCounts.get(baseLabel) ?? 0) + 1;
+    baseCounts.set(baseLabel, nextCount);
+    const label = nextCount === 1 ? baseLabel : `${baseLabel}-${nextCount}`;
+    assignments.set(normalizedRaw, label);
+    return label;
+  };
+
+  return sliced
+    .map((line, idx) => {
+      const cleanLine = stripAnsiCodes(line);
+      const lineNumber = start + idx + 1;
+      const { nodeLabel: rawNodeLabel, remainder } = extractNodeSegment(cleanLine);
+      const baseNodeLabel = deriveNodeLabel(rawNodeLabel, labelHints);
+      const displayNodeLabel = assignLabel(rawNodeLabel, baseNodeLabel);
+      const { timestamp, remainder: afterTimestamp } = extractTimestampSegment(remainder);
+      const { levelLabel, remainder: finalContent } = extractLevelSegment(afterTimestamp);
+      const simplified = simplifyKeyValueContent(finalContent);
+      let contentText = simplified || finalContent.trim();
+      if (!contentText) {
+        contentText = afterTimestamp.trim();
+      }
+      if (!contentText) {
+        contentText = cleanLine.trim();
+      }
+      return {
+        id: `${lineNumber}:${displayNodeLabel}:${idx}`,
+        lineNumber,
+        nodeLabel: displayNodeLabel,
+        nodeColor: colorForNode(baseNodeLabel),
+        levelLabel,
+        content: contentText || "",
+        timestamp: formatInlineTimestamp(timestamp),
+      };
+    })
+    .filter((entry, idx) => !(sliced[idx] === "" && idx === sliced.length - 1));
+}
 
 export default function WorkflowTerminal({
   isOpen,
@@ -80,128 +456,33 @@ export default function WorkflowTerminal({
   workflowName,
   namespace,
   nodeSlugMap,
+  nodes,
   submitting,
   submitResult,
   submitError,
-  nodes,
 }: WorkflowTerminalProps) {
   const resolvedNamespace = namespace ?? submitResult?.namespace ?? undefined;
   const [height, setHeight] = React.useState<number>(320);
   const [isResizing, setIsResizing] = React.useState(false);
-  const [lines, setLines] = React.useState<TerminalLine[]>([]);
-  const [loading, setLoading] = React.useState(false);
   const [fetchError, setFetchError] = React.useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = React.useState<number | null>(null);
   const [hasUnread, setHasUnread] = React.useState(false);
   const [autoScroll, setAutoScroll] = React.useState(true);
+  const [logText, setLogText] = React.useState<string>("");
 
-  const processedChunksRef = React.useRef<Set<string>>(new Set());
-  const cursorRef = React.useRef<string | null>(null);
   const scheduleRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelPollingRef = React.useRef(false);
+  const isFetchingRef = React.useRef(false);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const startYRef = React.useRef(0);
   const startHeightRef = React.useRef(0);
 
-  const slugInfoMap = React.useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        label: string;
-        color: string;
-      }
-    >();
-
-    const nodeById = new Map(nodes.map((node) => [node.id, node]));
-
-    if (nodeSlugMap) {
-      Object.entries(nodeSlugMap).forEach(([nodeId, slug]) => {
-        const node = nodeById.get(nodeId);
-        const label = node?.data.label || node?.data.templateName || slug;
-        map.set(slug, {
-          label: label ?? slug,
-          color: slugToColor(slug),
-        });
-      });
-    }
-
-    nodes.forEach((node) => {
-      const fallbackSlug = sanitizeSegment(node.data.templateName || node.data.label || node.id, node.id);
-      if (!map.has(fallbackSlug)) {
-        map.set(fallbackSlug, {
-          label: node.data.label || node.data.templateName || fallbackSlug,
-          color: slugToColor(fallbackSlug),
-        });
-      }
-    });
-
-    return map;
-  }, [nodeSlugMap, nodes]);
-
-  const appendChunks = React.useCallback(
-    (chunks: WorkflowLogChunk[]) => {
-      if (!chunks.length) return;
-
-      let mutated = false;
-      setLines((prev) => {
-        const next = [...prev];
-        for (const chunk of chunks) {
-          const fingerprint = `${chunk.key}:${chunk.endOffset}`;
-          if (processedChunksRef.current.has(fingerprint)) {
-            continue;
-          }
-          processedChunksRef.current.add(fingerprint);
-
-          const info = slugInfoMap.get(chunk.nodeSlug);
-          const label = info?.label ?? chunk.nodeSlug;
-          const color = info?.color ?? "hsl(210, 18%, 66%)";
-          const timestampMs = Math.round((chunk.timestamp ?? Date.now() / 1000) * 1000);
-          const normalized = chunk.content.replace(/\r\n/g, "\n");
-          const linesContent = normalized.split("\n");
-          const baseId = `${chunk.key}:${chunk.startOffset}`;
-
-          linesContent.forEach((text, index) => {
-            const isLastLine = index === linesContent.length - 1;
-            if (isLastLine && text === "") {
-              return;
-            }
-            const id = `${baseId}:${index}`;
-            next.push({
-              id,
-              slug: chunk.nodeSlug,
-              label,
-              color,
-              podName: chunk.podName,
-              text,
-              timestamp: timestampMs,
-            });
-            mutated = true;
-          });
-        }
-
-        if (!mutated) {
-          return prev;
-        }
-
-        if (next.length > MAX_LINES) {
-          next.splice(0, next.length - MAX_LINES);
-        }
-
-        return next;
-      });
-
-      if (mutated) {
-        setLastUpdated(Date.now());
-        if (!isOpen) {
-          setHasUnread(true);
-        }
-      }
-    },
-    [isOpen, slugInfoMap]
-  );
+  const labelHints = React.useMemo(() => buildNodeLabelHints(nodeSlugMap, nodes), [nodeSlugMap, nodes]);
+  const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints), [labelHints, logText]);
+  const lineCount = logEntries.length;
 
   const pollLogs = React.useCallback(async () => {
-    if (!workflowName) {
+    if (!workflowName || isFetchingRef.current) {
       return;
     }
 
@@ -210,25 +491,37 @@ export default function WorkflowTerminal({
       scheduleRef.current = null;
     }
 
-    setLoading(true);
+    isFetchingRef.current = true;
     try {
       const result = await fetchWorkflowLogs({
         workflowName,
         namespace: resolvedNamespace,
-        cursor: cursorRef.current ?? undefined,
       });
 
-      cursorRef.current = result.cursor;
-      if (result.chunks.length) {
-        appendChunks(result.chunks);
+      const nextLogs = result.logs ?? "";
+      let changed = false;
+      setLogText((prev) => {
+        if (prev === nextLogs) {
+          return prev;
+        }
+        changed = true;
+        return nextLogs;
+      });
+
+      if (changed) {
+        setLastUpdated(Date.now());
+        if (!isOpen) {
+          setHasUnread(true);
+        }
       }
+
       setFetchError(null);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Error obteniendo logs de la ejecución";
       setFetchError(message);
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
 
       if (!cancelPollingRef.current && workflowName) {
         scheduleRef.current = setTimeout(() => {
@@ -236,12 +529,10 @@ export default function WorkflowTerminal({
         }, 4000);
       }
     }
-  }, [appendChunks, resolvedNamespace, workflowName]);
+  }, [isOpen, resolvedNamespace, workflowName]);
 
   React.useEffect(() => {
-    processedChunksRef.current.clear();
-    cursorRef.current = null;
-    setLines([]);
+    setLogText("");
     setFetchError(null);
     setLastUpdated(null);
     setHasUnread(false);
@@ -280,7 +571,7 @@ export default function WorkflowTerminal({
     const container = scrollRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
-  }, [lines, autoScroll]);
+  }, [autoScroll, logText]);
 
   React.useEffect(() => {
     if (isOpen && height < MIN_HEIGHT) {
@@ -374,13 +665,15 @@ export default function WorkflowTerminal({
           {lastUpdated && (
             <span>Actualizado {formatTimestamp(lastUpdated)}</span>
           )}
-          {loading && <span className="animate-pulse text-gray-200">Actualizando…</span>}
+          <span className="text-[10px] text-gray-500">
+            Líneas: {lineCount}
+          </span>
           <button
             type="button"
             onClick={handleManualRefresh}
-            disabled={!workflowName || loading}
+            disabled={!workflowName}
             className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${
-              !workflowName || loading
+              !workflowName
                 ? "cursor-not-allowed text-gray-600"
                 : "text-gray-200 hover:bg-gray-800"
             }`}
@@ -433,33 +726,38 @@ export default function WorkflowTerminal({
               className="h-full overflow-y-auto px-3 py-2 font-mono text-[12px] leading-5 text-gray-100"
               onScroll={handleScroll}
             >
-              {lines.length === 0 && !loading && (
+              {logEntries.length === 0 ? (
                 <div className="py-6 text-center text-[11px] text-gray-500">
                   {submitResult
                     ? "No se han recibido logs todavía. Esta vista se actualizará automáticamente."
                     : "Sin ejecuciones. Envía un workflow para comenzar."}
                 </div>
+              ) : (
+                logEntries.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3 py-1 text-[12px]">
+                    <span className="w-16 shrink-0 text-right font-mono text-[10px] text-gray-500">
+                      {entry.timestamp ?? entry.lineNumber.toString().padStart(4, "0")}
+                    </span>
+                    <span
+                      className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                      style={{
+                        color: entry.nodeColor,
+                        borderColor: entry.nodeColor,
+                      }}
+                    >
+                      {entry.nodeLabel}
+                    </span>
+                    <span
+                      className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${LEVEL_CLASSNAMES[entry.levelLabel]}`}
+                    >
+                      {entry.levelLabel}
+                    </span>
+                    <pre className="flex-1 whitespace-pre-wrap break-words text-gray-100">
+                      {entry.content || " "}
+                    </pre>
+                  </div>
+                ))
               )}
-              {lines.map((line) => (
-                <div key={line.id} className="flex items-start gap-3 py-1 text-[12px]">
-                  <span className="w-16 shrink-0 text-[10px] text-gray-500">
-                    {formatTimestamp(line.timestamp)}
-                  </span>
-                  <span
-                    className="shrink-0 text-[11px] font-semibold"
-                    style={{ color: line.color }}
-                    title={line.slug}
-                  >
-                    {line.label}
-                  </span>
-                  <span className="shrink-0 max-w-[160px] truncate text-[10px] text-gray-500">
-                    {line.podName}
-                  </span>
-                  <pre className="flex-1 whitespace-pre-wrap break-words">
-                    {line.text || " "}
-                  </pre>
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -467,4 +765,3 @@ export default function WorkflowTerminal({
     </div>
   );
 }
-

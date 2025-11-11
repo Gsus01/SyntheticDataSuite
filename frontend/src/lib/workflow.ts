@@ -38,21 +38,10 @@ export type ArtifactPreviewResult = {
   size?: number | null;
 };
 
-export type WorkflowLogChunk = {
-  key: string;
-  nodeSlug: string;
-  podName: string;
-  content: string;
-  startOffset: number;
-  endOffset: number;
-  hasMore: boolean;
-  encoding: string;
-  timestamp: number;
-};
-
-export type WorkflowLogStreamResult = {
-  cursor: string;
-  chunks: WorkflowLogChunk[];
+export type WorkflowLogsResult = {
+  workflowName: string;
+  namespace: string;
+  logs: string;
 };
 
 export type WorkflowStatusNodeMap = Record<string, WorkflowNodeRuntimeStatus>;
@@ -74,10 +63,8 @@ export type WorkflowStatusRequest = {
 export type WorkflowLogFetchRequest = {
   workflowName: string;
   namespace?: string;
-  cursor?: string | null;
-  container?: string;
-  tailLines?: number;
-  sinceSeconds?: number;
+  podName?: string;
+  follow?: boolean;
 };
 
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
@@ -165,33 +152,42 @@ export async function previewArtifact(
 
 export async function fetchWorkflowLogs(
   request: WorkflowLogFetchRequest
-): Promise<WorkflowLogStreamResult> {
+): Promise<WorkflowLogsResult> {
+  console.debug("[logs] fetch start", {
+    workflowName: request.workflowName,
+    namespace: request.namespace,
+    podName: request.podName,
+    follow: request.follow,
+  });
+
   const url = new URL(`${API_BASE}/workflow/logs/stream`);
   url.searchParams.set("workflowName", request.workflowName);
   if (request.namespace) {
     url.searchParams.set("namespace", request.namespace);
   }
-  if (request.cursor) {
-    url.searchParams.set("cursor", request.cursor);
+  if (request.podName) {
+    url.searchParams.set("podName", request.podName);
   }
-  if (request.container) {
-    url.searchParams.set("container", request.container);
-  }
-  if (typeof request.tailLines === "number") {
-    url.searchParams.set("tailLines", String(request.tailLines));
-  }
-  if (typeof request.sinceSeconds === "number") {
-    url.searchParams.set("sinceSeconds", String(request.sinceSeconds));
+  if (request.follow) {
+    url.searchParams.set("follow", "true");
   }
 
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `HTTP ${response.status}`);
+  try {
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const message = await response.text();
+      console.debug("[logs] fetch error", { status: response.status, message });
+      throw new Error(message || `HTTP ${response.status}`);
+    }
+    const payload = (await response.json()) as WorkflowLogsResult;
+    console.debug("[logs] fetch success", {
+      size: payload.logs?.length ?? 0,
+    });
+    return payload;
+  } catch (err) {
+    console.debug("[logs] fetch exception", err);
+    throw err;
   }
-
-  const payload = (await response.json()) as WorkflowLogStreamResult;
-  return payload;
 }
 
 export async function fetchWorkflowStatus(
@@ -223,5 +219,3 @@ export async function fetchWorkflowStatus(
     nodes: raw.nodes ?? {},
   };
 }
-
-
