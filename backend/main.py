@@ -1,11 +1,13 @@
+import base64
 import json
 import logging
 import os
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,9 +34,12 @@ from workflow_builder import (
     render_workflow_yaml,
     suggest_workflow_filename,
 )
+from argo_client import ArgoClient, ArgoClientError, ArgoNotFoundError
 
 
 logger = logging.getLogger(__name__)
+
+_FINAL_WORKFLOW_PHASES = {"Succeeded", "Failed", "Error", "Skipped", "Omitted", "Terminated"}
 
 
 class ArtifactUploadResponse(BaseModel):
@@ -50,6 +55,7 @@ class WorkflowSubmitResponse(BaseModel):
 
     workflow_name: str = Field(..., alias="workflowName")
     namespace: str
+    node_slug_map: Dict[str, str] = Field(default_factory=dict, alias="nodeSlugMap")
     bucket: str
     key: str
     manifest_filename: str = Field(..., alias="manifestFilename")
@@ -85,6 +91,52 @@ class ArtifactPreviewResponse(BaseModel):
     content_type: Optional[str] = Field(None, alias="contentType")
     encoding: str = "utf-8"
     size: Optional[int] = None
+
+
+class WorkflowLogChunk(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    key: str
+    node_slug: str = Field(..., alias="nodeSlug")
+    pod_name: str = Field(..., alias="podName")
+    content: str
+    start_offset: int = Field(..., alias="startOffset")
+    end_offset: int = Field(..., alias="endOffset")
+    has_more: bool = Field(..., alias="hasMore")
+    encoding: str = "utf-8"
+    timestamp: float
+
+
+class WorkflowLogStreamResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cursor: str
+    chunks: List[WorkflowLogChunk]
+
+
+class WorkflowNodeStatus(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    slug: str
+    phase: Optional[str] = None
+    type: Optional[str] = None
+    id: Optional[str] = None
+    display_name: Optional[str] = Field(None, alias="displayName")
+    message: Optional[str] = None
+    progress: Optional[str] = None
+    started_at: Optional[str] = Field(None, alias="startedAt")
+    finished_at: Optional[str] = Field(None, alias="finishedAt")
+
+
+class WorkflowStatusResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_name: str = Field(..., alias="workflowName")
+    namespace: str
+    phase: Optional[str] = None
+    finished: bool
+    nodes: Dict[str, WorkflowNodeStatus]
+    updated_at: Optional[str] = Field(None, alias="updatedAt")
 
 
 app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")
@@ -293,6 +345,52 @@ def _stream_object(client, bucket: str, key: str, chunk_size: int = 1024 * 1024)
         obj.release_conn()
 
 
+_CURSOR_VERSION = 1
+_MAX_CURSOR_ENTRIES = 512
+_MAX_LOG_OBJECTS = 256
+_MAX_LOG_CHUNK_BYTES = 512 * 1024
+_MIN_LOG_CHUNK_BYTES = 1024
+
+
+def _decode_cursor(cursor_raw: Optional[str]) -> Dict[str, int]:
+    if not cursor_raw:
+        return {}
+
+    padding = "=" * (-len(cursor_raw) % 4)
+    try:
+        data = base64.urlsafe_b64decode((cursor_raw + padding).encode("utf-8"))
+        payload = json.loads(data.decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - cursor invalid, ignoramos
+        logger.warning("Cursor de logs inválido, restableciendo: %s", exc)
+        return {}
+
+    if not isinstance(payload, dict) or payload.get("v") != _CURSOR_VERSION:
+        return {}
+
+    objects = payload.get("objects", {})
+    if not isinstance(objects, dict):
+        return {}
+
+    decoded: Dict[str, int] = {}
+    for key, value in objects.items():
+        try:
+            decoded[str(key)] = max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+
+    return decoded
+
+
+def _encode_cursor(mapped: Dict[str, int]) -> str:
+    if len(mapped) > _MAX_CURSOR_ENTRIES:
+        # Preserve the most recent entries deterministically by key ordering
+        trimmed_items = sorted(mapped.items(), key=lambda item: item[0])[-_MAX_CURSOR_ENTRIES:]
+        mapped = dict(trimmed_items)
+    payload = {"v": _CURSOR_VERSION, "objects": {k: max(0, int(v)) for k, v in mapped.items()}}
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
 @app.post("/workflow/submit", response_model=WorkflowSubmitResponse)
 def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
     try:
@@ -325,6 +423,8 @@ def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
+    node_slug_map = {node_plan.node_id: node_plan.slug for node_plan in plan.tasks()}
+
     logger.info(
         "Workflow %s enviado a Argo en namespace %s. Manifest almacenado en %s/%s",
         submission.workflow_name,
@@ -336,10 +436,67 @@ def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
     return WorkflowSubmitResponse(
         workflowName=submission.workflow_name,
         namespace=submission.namespace,
+        nodeSlugMap=node_slug_map,
         bucket=plan.bucket,
         key=manifest_key,
         manifestFilename=filename,
         cliOutput=submission.cli_output,
+    )
+
+
+@app.get("/workflow/status", response_model=WorkflowStatusResponse)
+def get_workflow_status(
+    workflow_name: str = Query(..., alias="workflowName"),
+    namespace: Optional[str] = Query(None),
+) -> WorkflowStatusResponse:
+    resolved_namespace = namespace or os.getenv("ARGO_NAMESPACE", "argo")
+
+    try:
+        client = ArgoClient()
+        workflow_obj = client.get_workflow(resolved_namespace, workflow_name)
+    except ArgoNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ArgoClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    status_obj: Dict[str, Any] = workflow_obj.get("status") or {}
+    phase = status_obj.get("phase")
+    finished_at = status_obj.get("finishedAt")
+    finished = bool(finished_at) or (phase in _FINAL_WORKFLOW_PHASES)
+
+    nodes_raw = status_obj.get("nodes") or {}
+    node_statuses: Dict[str, WorkflowNodeStatus] = {}
+
+    if isinstance(nodes_raw, dict):
+        for node in nodes_raw.values():
+            if not isinstance(node, dict):
+                continue
+
+            display_name = node.get("displayName") or node.get("name")
+            if not display_name:
+                continue
+
+            node_statuses[display_name] = WorkflowNodeStatus(
+                slug=display_name,
+                phase=node.get("phase"),
+                type=node.get("type"),
+                id=node.get("id"),
+                display_name=display_name,
+                message=node.get("message"),
+                progress=node.get("progress"),
+                started_at=node.get("startedAt"),
+                finished_at=node.get("finishedAt"),
+            )
+
+    updated_at = status_obj.get("finishedAt") or status_obj.get("startedAt")
+
+    return WorkflowStatusResponse(
+        workflow_name=workflow_name,
+        namespace=resolved_namespace,
+        phase=phase,
+        finished=finished,
+        nodes=node_statuses,
+        updated_at=updated_at,
     )
 
 
@@ -486,3 +643,102 @@ def preview_artifact(
         encoding=encoding,
         size=getattr(stat, "size", None),
     )
+
+
+@app.get("/workflow/logs/stream", response_model=WorkflowLogStreamResponse)
+def stream_workflow_logs(
+    workflow_name: str = Query(..., alias="workflowName"),
+    namespace: Optional[str] = Query(None),
+    cursor: Optional[str] = None,
+    container: Optional[str] = Query(None),
+    tail_lines: Optional[int] = Query(2000, ge=1, le=4000, alias="tailLines"),
+    since_seconds: Optional[int] = Query(None, ge=1, le=24 * 3600, alias="sinceSeconds"),
+) -> WorkflowLogStreamResponse:
+    resolved_namespace = namespace or os.getenv("ARGO_NAMESPACE", "argo")
+
+    try:
+        client = ArgoClient()
+        workflow_obj = client.get_workflow(resolved_namespace, workflow_name)
+    except ArgoNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ArgoClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    status_obj: Dict[str, Any] = workflow_obj.get("status") or {}
+    nodes_raw = status_obj.get("nodes") or {}
+
+    pod_entries: List[tuple[str, str, Dict[str, Any]]] = []
+    if isinstance(nodes_raw, dict):
+        for node in nodes_raw.values():
+            if not isinstance(node, dict):
+                continue
+            pod_name = node.get("podName") or node.get("id")
+            if not pod_name:
+                continue
+            display_name = node.get("displayName") or node.get("name") or node.get("id") or pod_name
+            pod_entries.append((display_name, pod_name, node))
+
+    cursor_map = _decode_cursor(cursor)
+    updated_cursor = dict(cursor_map)
+    chunks: List[WorkflowLogChunk] = []
+
+    if not pod_entries:
+        encoded_cursor = _encode_cursor(updated_cursor)
+        return WorkflowLogStreamResponse(cursor=encoded_cursor, chunks=[])
+
+    pod_entries.sort(key=lambda item: item[0])
+
+    now = time.time()
+    effective_container = container or "main"
+    tail_lines = tail_lines or 2000
+
+    for display_name, pod_name, node_data in pod_entries:
+        try:
+            log_text = client.get_workflow_logs(
+                resolved_namespace,
+                workflow_name,
+                pod_name,
+                container=effective_container,
+                tail_lines=tail_lines,
+                since_seconds=since_seconds,
+            )
+        except ArgoNotFoundError:
+            continue
+        except ArgoClientError as exc:
+            logger.warning("Error obteniendo logs de Argo para pod %s: %s", pod_name, exc)
+            continue
+
+        text = log_text or ""
+        previous_offset = cursor_map.get(pod_name, 0)
+        if previous_offset < 0 or previous_offset > len(text):
+            previous_offset = 0
+
+        if len(text) <= previous_offset:
+            updated_cursor[pod_name] = len(text)
+            continue
+
+        content = text[previous_offset:]
+        end_offset = len(text)
+        updated_cursor[pod_name] = end_offset
+
+        timestamp_value = now
+
+        phase = node_data.get("phase")
+        has_more = phase not in _FINAL_WORKFLOW_PHASES if isinstance(phase, str) else False
+
+        chunks.append(
+            WorkflowLogChunk(
+                key=pod_name,
+                nodeSlug=display_name,
+                podName=pod_name,
+                content=content,
+                startOffset=previous_offset,
+                endOffset=end_offset,
+                hasMore=has_more,
+                encoding="utf-8",
+                timestamp=timestamp_value,
+            )
+        )
+
+    encoded_cursor = _encode_cursor(updated_cursor)
+    return WorkflowLogStreamResponse(cursor=encoded_cursor, chunks=chunks)

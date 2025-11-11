@@ -1,5 +1,5 @@
 import type { Edge, Node } from "reactflow";
-import type { FlowNodeData } from "@/types/flow";
+import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import { API_BASE } from "@/lib/api";
 
 export type SubmitWorkflowRequest = {
@@ -11,6 +11,7 @@ export type SubmitWorkflowRequest = {
 export type SubmitWorkflowResult = {
   workflowName: string;
   namespace: string;
+  nodeSlugMap: Record<string, string>;
   bucket: string;
   key: string;
   manifestFilename: string;
@@ -35,6 +36,48 @@ export type ArtifactPreviewResult = {
   contentType?: string | null;
   encoding: string;
   size?: number | null;
+};
+
+export type WorkflowLogChunk = {
+  key: string;
+  nodeSlug: string;
+  podName: string;
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  hasMore: boolean;
+  encoding: string;
+  timestamp: number;
+};
+
+export type WorkflowLogStreamResult = {
+  cursor: string;
+  chunks: WorkflowLogChunk[];
+};
+
+export type WorkflowStatusNodeMap = Record<string, WorkflowNodeRuntimeStatus>;
+
+export type WorkflowStatusResponse = {
+  workflowName: string;
+  namespace: string;
+  phase?: string | null;
+  finished: boolean;
+  updatedAt?: string | null;
+  nodes: WorkflowStatusNodeMap;
+};
+
+export type WorkflowStatusRequest = {
+  workflowName: string;
+  namespace?: string;
+};
+
+export type WorkflowLogFetchRequest = {
+  workflowName: string;
+  namespace?: string;
+  cursor?: string | null;
+  container?: string;
+  tailLines?: number;
+  sinceSeconds?: number;
 };
 
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
@@ -117,6 +160,68 @@ export async function previewArtifact(
 
   const payload = (await response.json()) as ArtifactPreviewResult;
   return payload;
+}
+
+
+export async function fetchWorkflowLogs(
+  request: WorkflowLogFetchRequest
+): Promise<WorkflowLogStreamResult> {
+  const url = new URL(`${API_BASE}/workflow/logs/stream`);
+  url.searchParams.set("workflowName", request.workflowName);
+  if (request.namespace) {
+    url.searchParams.set("namespace", request.namespace);
+  }
+  if (request.cursor) {
+    url.searchParams.set("cursor", request.cursor);
+  }
+  if (request.container) {
+    url.searchParams.set("container", request.container);
+  }
+  if (typeof request.tailLines === "number") {
+    url.searchParams.set("tailLines", String(request.tailLines));
+  }
+  if (typeof request.sinceSeconds === "number") {
+    url.searchParams.set("sinceSeconds", String(request.sinceSeconds));
+  }
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as WorkflowLogStreamResult;
+  return payload;
+}
+
+export async function fetchWorkflowStatus(
+  request: WorkflowStatusRequest
+): Promise<WorkflowStatusResponse | null> {
+  const url = new URL(`${API_BASE}/workflow/status`);
+  url.searchParams.set("workflowName", request.workflowName);
+  if (request.namespace) {
+    url.searchParams.set("namespace", request.namespace);
+  }
+
+  const response = await fetch(url.toString());
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const raw = (await response.json()) as Partial<WorkflowStatusResponse>;
+  return {
+    workflowName: raw.workflowName ?? request.workflowName,
+    namespace: raw.namespace ?? request.namespace ?? "",
+    phase: raw.phase ?? null,
+    finished: Boolean(raw.finished),
+    updatedAt: raw.updatedAt ?? null,
+    nodes: raw.nodes ?? {},
+  };
 }
 
 
