@@ -535,6 +535,21 @@ function EditorInner() {
     <div className="flex h-screen w-full">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center justify-end gap-3 border-b border-gray-200 bg-white px-4 py-3">
+          {submitting && (
+            <span className="text-xs font-medium uppercase tracking-wide text-indigo-600">
+              Enviando workflow…
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleSubmitClick}
+            disabled={submitting}
+            className="rounded bg-indigo-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {submitting ? "Enviando…" : "Enviar Workflow"}
+          </button>
+        </div>
         <div className="relative flex min-h-0 flex-1">
           <div ref={reactFlowWrapper} className="flex-1 min-h-0">
             <ReactFlow
@@ -572,18 +587,6 @@ function EditorInner() {
             edges={edges}
             onChange={handleNodeDataChange}
           />
-          <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSubmitClick}
-              disabled={submitting}
-              className={`rounded bg-indigo-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 ${
-                submitting ? "cursor-not-allowed opacity-70" : ""
-              }`}
-            >
-              {submitting ? "Enviando…" : "Enviar Workflow"}
-            </button>
-          </div>
         </div>
         <WorkflowTerminal
           isOpen={terminalOpen}

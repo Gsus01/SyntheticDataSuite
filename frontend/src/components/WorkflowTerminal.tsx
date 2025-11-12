@@ -628,7 +628,7 @@ export default function WorkflowTerminal({
 
   return (
     <div
-      className="relative shrink-0 border-t border-gray-800 bg-gray-950 text-gray-100 shadow-[0_-6px_16px_rgba(0,0,0,0.35)] transition-[height] duration-200"
+      className="relative shrink-0 border-t border-gray-800 bg-gray-950 text-gray-100 shadow-[0_-6px_16px_rgba(0,0,0,0.35)]"
       style={{ height: containerHeight }}
     >
       <div

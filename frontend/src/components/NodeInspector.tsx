@@ -103,6 +103,32 @@ function formatBytes(size: number | null | undefined): string {
 
 const PREVIEW_LINE_LIMIT = 100;
 
+const PHASE_BADGE_MAP: Record<string, string> = {
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  waiting: "border-amber-200 bg-amber-50 text-amber-700",
+  queued: "border-amber-200 bg-amber-50 text-amber-700",
+  running: "border-sky-200 bg-sky-50 text-sky-700",
+  executing: "border-sky-200 bg-sky-50 text-sky-700",
+  inprogress: "border-sky-200 bg-sky-50 text-sky-700",
+  succeeded: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  failed: "border-rose-200 bg-rose-50 text-rose-700",
+  error: "border-rose-200 bg-rose-50 text-rose-700",
+  terminated: "border-rose-200 bg-rose-50 text-rose-700",
+  cancelled: "border-rose-200 bg-rose-50 text-rose-700",
+  skipped: "border-gray-200 bg-gray-50 text-gray-600",
+  omitted: "border-gray-200 bg-gray-50 text-gray-600",
+};
+
+const DEFAULT_PHASE_BADGE = "border-gray-200 bg-gray-50 text-gray-600";
+
+function getPhaseBadgeClasses(phase?: string | null): string {
+  if (!phase) return DEFAULT_PHASE_BADGE;
+  const normalized = phase.trim().toLowerCase().replace(/\s+/g, "");
+  return PHASE_BADGE_MAP[normalized] ?? DEFAULT_PHASE_BADGE;
+}
+
 function limitPreviewLines(content: string): { content: string; limitedLines: boolean } {
   const lines = content.split(/\r?\n/);
   if (lines.length <= PREVIEW_LINE_LIMIT) {
@@ -150,6 +176,17 @@ export default function NodeInspector({
   const [outputError, setOutputError] = React.useState<string | null>(null);
   const [downloadState, setDownloadState] = React.useState<Record<string, DownloadState>>({});
   const [previewStates, setPreviewStates] = React.useState<Record<string, OutputPreviewState>>({});
+  const safeTrim = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
+  const trimmedLabel = safeTrim(node?.data.label);
+  const trimmedTemplate = safeTrim(node?.data.templateName);
+  const displayLabel = trimmedLabel || trimmedTemplate || node?.id || "Nodo seleccionado";
+  const argoWorkflowId = safeTrim(node?.data.runtimeStatus?.slug) || node?.id || "—";
+  const componentId = node?.id || "—";
+  const phaseLabel = safeTrim(node?.data.runtimeStatus?.phase);
+  const phaseBadgeClasses = getPhaseBadgeClasses(phaseLabel);
+  const showTemplateMeta =
+    Boolean(trimmedTemplate) &&
+    trimmedTemplate.toLowerCase() !== displayLabel.toLowerCase();
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -669,28 +706,50 @@ export default function NodeInspector({
   };
 
   return (
-    <aside className="relative z-20 w-80 shrink-0 border-l border-gray-200 bg-white p-4 text-sm text-gray-800 shadow-xl">
-      <div className="mb-4">
-        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Inspector</div>
+    <aside className="relative z-20 flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white text-sm text-gray-800 shadow-xl">
+      <div className="border-b border-gray-200 px-4 pb-4 pt-4">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Inspector</div>
         {node ? (
-          <div className="mt-1 text-sm font-medium text-gray-900">{node.data.label || node.id}</div>
+          <>
+            <div className="mt-1 text-base font-semibold text-gray-900">{displayLabel}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-gray-500">
+              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600">
+                Nodo <span className="font-mono text-[10px] uppercase tracking-normal">{componentId}</span>
+              </span>
+              {argoWorkflowId && argoWorkflowId !== "—" && (
+                <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600">
+                  Argo <span className="font-mono text-[10px] uppercase tracking-normal">{argoWorkflowId}</span>
+                </span>
+              )}
+              {phaseLabel && (
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${phaseBadgeClasses}`}
+                >
+                  {phaseLabel}
+                </span>
+              )}
+              {showTemplateMeta && (
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">
+                  {trimmedTemplate}
+                </span>
+              )}
+            </div>
+          </>
         ) : (
           <div className="mt-1 text-sm text-gray-500">Selecciona un nodo.</div>
         )}
-        {node?.data.templateName && (
-          <div className="mt-1 text-xs text-gray-500">Plantilla: {node.data.templateName}</div>
-        )}
       </div>
 
-      {!node ? (
-        <div className="text-xs text-gray-500">Selecciona un nodo en el lienzo para editar sus parámetros.</div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {isOutputNode && (
-            <div className="rounded border border-indigo-200 bg-indigo-50 p-3 text-xs text-gray-700">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
-                Artefactos de salida
-              </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {!node ? (
+          <div className="text-xs text-gray-500">Selecciona un nodo en el lienzo para editar sus parámetros.</div>
+        ) : (
+          <div className="flex flex-col gap-4 pb-8">
+            {isOutputNode && (
+              <div className="rounded border border-indigo-200 bg-indigo-50 p-3 text-xs text-gray-700">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
+                  Artefactos de salida
+                </div>
               {outputLoading && <span className="text-[11px] text-gray-500">Buscando artefactos…</span>}
               {outputError && <span className="text-[11px] text-red-600">{outputError}</span>}
               {!outputLoading && !outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
@@ -894,8 +953,9 @@ export default function NodeInspector({
               );
             })
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
