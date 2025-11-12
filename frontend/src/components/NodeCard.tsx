@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { WorkflowNodeRuntimeStatus } from "@/types/flow";
+import { resolveStatusKey } from "@/lib/runtime-status";
 
 type Variant = "input" | "default" | "output";
 export type NodeTone = "input" | "preprocessing" | "training" | "generation" | "output" | "other";
@@ -51,7 +52,7 @@ const statusThemes: Record<
     label: "Pendiente",
   },
   running: {
-    dotClass: "bg-amber-400 shadow-md shadow-amber-400/50 animate-pulse",
+    dotClass: "bg-amber-400 shadow-lg shadow-amber-400/80 node-running-dot",
     label: "En ejecución",
   },
   succeeded: {
@@ -81,17 +82,20 @@ const statusThemes: Record<
 };
 
 function resolveStatusTheme(status?: WorkflowNodeRuntimeStatus) {
-  if (!status?.phase) {
+  if (!status) {
     return null;
   }
-  const key = status.phase.toLowerCase();
+  const key = resolveStatusKey(status) ?? status.phase?.toLowerCase();
+  if (!key) {
+    return null;
+  }
   const theme = statusThemes[key] ?? {
     dotClass: "bg-slate-400/70 shadow-sm",
-    label: status.phase,
+    label: status.phase ?? "Desconocido",
   };
   return {
     ...theme,
-    phase: status.phase,
+    phase: status.phase ?? theme.label,
     message: status.message,
     tooltip: status.message ? `${theme.label}: ${status.message}` : theme.label,
   };

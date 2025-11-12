@@ -6,6 +6,7 @@ import { API_BASE } from "@/lib/api";
 import { NODE_TYPES } from "@/lib/flow-const";
 import type { FlowNodeData, NodeArtifact } from "@/types/flow";
 import { getOutputArtifacts, previewArtifact, type OutputArtifactInfo } from "@/lib/workflow";
+import { derivePhase } from "@/lib/runtime-status";
 
 type NodeInspectorProps = {
   isOpen: boolean;
@@ -182,7 +183,7 @@ export default function NodeInspector({
   const displayLabel = trimmedLabel || trimmedTemplate || node?.id || "Nodo seleccionado";
   const argoWorkflowId = safeTrim(node?.data.runtimeStatus?.slug) || node?.id || "—";
   const componentId = node?.id || "—";
-  const phaseLabel = safeTrim(node?.data.runtimeStatus?.phase);
+  const phaseLabel = safeTrim(derivePhase(node?.data.runtimeStatus));
   const phaseBadgeClasses = getPhaseBadgeClasses(phaseLabel);
   const showTemplateMeta =
     Boolean(trimmedTemplate) &&

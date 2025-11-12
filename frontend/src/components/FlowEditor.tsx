@@ -19,7 +19,13 @@ import NodeInspector from "@/components/NodeInspector";
 import WorkflowTerminal from "@/components/WorkflowTerminal";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
 import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
-import { submitWorkflow, fetchWorkflowStatus, type SubmitWorkflowResult } from "@/lib/workflow";
+import {
+  submitWorkflow,
+  fetchWorkflowStatus,
+  type SubmitWorkflowResult,
+  type WorkflowStatusNodeMap,
+} from "@/lib/workflow";
+import { normalizeStatusForDisplay } from "@/lib/runtime-status";
 
 const INITIAL_PENDING_PHASE = "Pending";
 
@@ -35,84 +41,9 @@ function createPendingStatus(identifier: string, previous?: WorkflowNodeRuntimeS
   };
 }
 
-const FINAL_PHASES = new Set([
-  "succeeded",
-  "failed",
-  "error",
-  "terminated",
-  "skipped",
-  "omitted",
-]);
-
-function isFinalPhase(phase?: string | null): boolean {
-  if (!phase) {
-    return false;
-  }
-  return FINAL_PHASES.has(phase.toLowerCase());
-}
-
-function computeDefaultExecutionOrder(nodes: Node<FlowNodeData>[], edges: Edge[]): string[] {
-  const defaultNodes = nodes.filter((node) => node.type === NODE_TYPES.nodeDefault);
-  const defaultIds = defaultNodes.map((node) => node.id);
-  const defaultIdSet = new Set(defaultIds);
-
-  const indegree = new Map<string, number>();
-  defaultIds.forEach((id) => indegree.set(id, 0));
-  const adjacency = new Map<string, Set<string>>();
-
-  edges.forEach((edge) => {
-    const { source, target } = edge;
-    if (!defaultIdSet.has(source) || !defaultIdSet.has(target)) {
-      return;
-    }
-    indegree.set(target, (indegree.get(target) ?? 0) + 1);
-    const neighbors = adjacency.get(source);
-    if (neighbors) {
-      neighbors.add(target);
-    } else {
-      adjacency.set(source, new Set([target]));
-    }
-  });
-
-  const queue: string[] = [];
-  defaultIds.forEach((id) => {
-    if ((indegree.get(id) ?? 0) === 0) {
-      queue.push(id);
-    }
-  });
-
-  const order: string[] = [];
-  const visited = new Set<string>();
-  let index = 0;
-  while (index < queue.length) {
-    const current = queue[index++];
-    if (visited.has(current)) {
-      continue;
-    }
-    visited.add(current);
-    order.push(current);
-
-    const neighbors = adjacency.get(current);
-    if (!neighbors) {
-      continue;
-    }
-    for (const neighbor of neighbors) {
-      const nextDegree = (indegree.get(neighbor) ?? 0) - 1;
-      indegree.set(neighbor, nextDegree);
-      if (nextDegree === 0) {
-        queue.push(neighbor);
-      }
-    }
-  }
-
-  defaultIds.forEach((id) => {
-    if (!visited.has(id)) {
-      order.push(id);
-    }
-  });
-
-  return order;
-}
+const STATUS_POLL_INTERVAL_FAST = 600;
+const STATUS_POLL_INTERVAL_WAITING = 450;
+const STATUS_POLL_INTERVAL_ERROR = 4000;
 
 let id = 0;
 const getId = () => `dnd_${id++}`;
@@ -386,6 +317,44 @@ function EditorInner() {
     }
   }, [cancelStatusPolling, edges, nodes, resetNodeRuntimeStatus, sessionId]);
 
+  const applyWorkflowStatus = React.useCallback(
+    (slugMap: Record<string, string>, statusNodes: WorkflowStatusNodeMap | undefined) => {
+      setNodes((prev) =>
+        prev.map((node) => {
+          const shouldTrack = node.type === NODE_TYPES.nodeDefault;
+          if (!shouldTrack) {
+            if (!node.data.runtimeStatus) {
+              return node;
+            }
+            const nextData = { ...node.data };
+            delete (nextData as Record<string, unknown>).runtimeStatus;
+            return { ...node, data: nextData };
+          }
+
+          const slug = slugMap[node.id];
+          const runtime = slug && statusNodes ? statusNodes[slug] : undefined;
+          const normalizedRuntime = normalizeStatusForDisplay(runtime);
+          const existing = node.data.runtimeStatus;
+          const nextStatus =
+            normalizedRuntime ?? existing ?? createPendingStatus(slug ?? node.id, existing);
+
+          if (isSameRuntimeStatus(existing, nextStatus)) {
+            return node;
+          }
+
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              runtimeStatus: nextStatus,
+            },
+          };
+        })
+      );
+    },
+    [isSameRuntimeStatus, setNodes]
+  );
+
   React.useEffect(() => {
     cancelStatusPolling();
 
@@ -418,118 +387,31 @@ function EditorInner() {
         }
 
         if (!status) {
-          statusPollTimeoutRef.current = setTimeout(pollStatus, 1500);
+          statusPollTimeoutRef.current = setTimeout(pollStatus, STATUS_POLL_INTERVAL_WAITING);
           return;
         }
 
-        setNodes((prev) => {
-          const defaultInfoMap = new Map<
-            string,
-            {
-              status: WorkflowNodeRuntimeStatus;
-              slug?: string;
-            }
-          >();
-          let hasActualRunning = false;
-
-          let nextNodes = prev.map((node) => {
-            const shouldTrack = node.type === NODE_TYPES.nodeDefault;
-            if (!shouldTrack) {
-              if (!node.data.runtimeStatus) {
-                return node;
-              }
-              const nextData = { ...node.data };
-              delete (nextData as Record<string, unknown>).runtimeStatus;
-              return { ...node, data: nextData };
-            }
-
-            const slug = slugMap[node.id];
-            const runtime = slug ? status.nodes[slug] : undefined;
-            const existing = node.data.runtimeStatus;
-
-            const nextStatus =
-              runtime ?? existing ?? createPendingStatus(slug ?? node.id, existing);
-
-            defaultInfoMap.set(node.id, { status: nextStatus, slug });
-            if (nextStatus.phase?.toLowerCase() === "running") {
-              hasActualRunning = true;
-            }
-
-            if (isSameRuntimeStatus(existing, nextStatus)) {
-              return node;
-            }
-
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                runtimeStatus: nextStatus,
-              },
-            };
-          });
-
-          if (!hasActualRunning && defaultInfoMap.size > 0) {
-            const executionOrder = computeDefaultExecutionOrder(nextNodes, edges);
-            let fallbackNodeId: string | null = null;
-
-            for (const nodeId of executionOrder) {
-              const info = defaultInfoMap.get(nodeId);
-              if (!info) {
-                continue;
-              }
-              const phaseLower = info.status?.phase?.toLowerCase();
-              if (!isFinalPhase(phaseLower)) {
-                fallbackNodeId = nodeId;
-                break;
-              }
-            }
-
-            if (fallbackNodeId) {
-              const info = defaultInfoMap.get(fallbackNodeId);
-              const fallbackSlug = info?.slug ?? slugMap[fallbackNodeId] ?? fallbackNodeId;
-              nextNodes = nextNodes.map((node) => {
-                if (node.id !== fallbackNodeId) {
-                  return node;
-                }
-                const existing = node.data.runtimeStatus;
-                const baseStatus = existing ?? createPendingStatus(fallbackSlug, existing);
-                const runningStatus: WorkflowNodeRuntimeStatus = {
-                  ...baseStatus,
-                  slug: baseStatus.slug ?? fallbackSlug,
-                  phase: "Running",
-                };
-                return {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    runtimeStatus: runningStatus,
-                  },
-                };
-              });
-            }
-          }
-
-          return nextNodes;
-        });
+        applyWorkflowStatus(slugMap, status.nodes);
 
         if (!status.finished) {
-          statusPollTimeoutRef.current = setTimeout(pollStatus, 2500);
+          statusPollTimeoutRef.current = setTimeout(pollStatus, STATUS_POLL_INTERVAL_FAST);
         }
       } catch (error) {
         if (statusAbortRef.current) {
           return;
         }
         console.error("Workflow status polling failed:", error);
-        statusPollTimeoutRef.current = setTimeout(pollStatus, 5000);
+        statusPollTimeoutRef.current = setTimeout(pollStatus, STATUS_POLL_INTERVAL_ERROR);
       }
     };
 
     pollStatus();
 
     return () => {
+      statusAbortRef.current = true;
       cancelStatusPolling();
     };
-  }, [cancelStatusPolling, edges, isSameRuntimeStatus, setNodes, submitResult]);
+  }, [applyWorkflowStatus, cancelStatusPolling, submitResult]);
 
   return (
     <div className="flex h-screen w-full">

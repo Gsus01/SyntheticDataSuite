@@ -257,12 +257,13 @@ def _build_config_inputs(
 
 def _build_output_plan(
     session_id: str,
+    slug: str,
     node: FlowNodePayload,
     template: NodeTemplate,
     bucket: str,
 ) -> Dict[str, ArtifactPlan]:
     outputs: Dict[str, ArtifactPlan] = {}
-    prefix = build_session_node_prefix(session_id, _slug_for_node(node))
+    prefix = build_session_node_prefix(session_id, slug)
     for spec in template.artifacts.outputs:
         suffix = _artifact_suffix(spec.path)
         key = f"{prefix}/outputs/{sanitize_path_segment(spec.name, 'artifact')}{suffix}"
@@ -411,7 +412,7 @@ def build_workflow_plan(payload: WorkflowGraphPayload) -> WorkflowPlan:
                 outputs={},
             )
         else:
-            outputs = _build_output_plan(payload.session_id, node, template, bucket)
+            outputs = _build_output_plan(payload.session_id, slug, node, template, bucket)
             config_inputs = _build_config_inputs(
                 payload.session_id,
                 slug,
@@ -648,6 +649,4 @@ def render_workflow_yaml(plan: WorkflowPlan) -> str:
 def suggest_workflow_filename(plan: WorkflowPlan) -> str:
     slug = sanitize_path_segment(plan.session_id[:16], "workflow")
     return f"workflow-{slug}.yaml"
-
-
 
