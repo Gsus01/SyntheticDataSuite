@@ -1,0 +1,46 @@
+# Configuración del preprocesador de series temporales
+
+# Configuración de logging
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+
+# Configuración de los datos
+data:
+  datetime_column: null  # Si es null, se detecta automáticamente
+
+# Pipeline de preprocesamiento
+preprocessing:
+  # Selección de características
+  features:
+    # include: ["timestamp", "value", "sensor_1"]  # Solo incluir estas columnas
+    # exclude: ["id", "metadata"]  # Excluir estas columnas
+    
+  # Manejo de valores faltantes
+  missing_values:
+    strategy: "fill"  # "drop" o "fill"
+    threshold: 0.5    # Para strategy="drop": mantener filas con al menos 50% de datos
+    method: "interpolate"  # Para strategy="fill": "forward", "backward", "interpolate", "mean"
+    
+  # Detección y manejo de outliers
+  outliers:
+    enabled: true
+    method: "iqr"     # "iqr" o "zscore"
+    threshold: 3      # Para método zscore
+    action: "cap"     # "remove" o "cap"
+    
+  # Normalización de datos
+  normalization:
+    enabled: true
+    method: "minmax"  # "minmax", "zscore", "robust"
+    
+  # Remuestreo temporal
+  resampling:
+    enabled: false
+    frequency: "1H"   # "1min", "5min", "1H", "1D", etc.
+    method: "mean"    # "mean", "sum", "first", "last"
+    
+  # Ventanas deslizantes
+  sliding_windows:
+    enabled: true
+    size: 5           # Tamaño de la ventana
+    features: []      # Si está vacío, se aplica a todas las columnas numéricas

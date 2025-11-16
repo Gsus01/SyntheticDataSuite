@@ -1,0 +1,6 @@
+{
+  "columnas_input": [2, 3, 4, 5, 6, 7],
+  "n_states": 4,
+  "covariance_type": "diag",
+  "n_iter": 100
+}

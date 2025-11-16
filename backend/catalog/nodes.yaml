@@ -1,0 +1,197 @@
+nodes:
+  - name: data-input
+    type: input
+    version: v1
+    parameters: [bucket, key]
+    artifacts:
+      inputs: []
+      outputs:
+        - name: source-data
+          path: /tmp/input/data.csv
+    limits: {}
+
+  - name: preprocessing
+    type: preprocessing
+    version: v2
+    parameters: [config, input, output]
+    artifacts:
+      inputs:
+        - name: source-data
+          path: /tmp/input/data.csv
+        - name: preprocessing-config
+          path: /tmp/config/preprocessing.yaml
+      outputs:
+        - name: processed-data
+          path: /tmp/output/processed_data.csv
+    limits: {}
+
+  - name: train-hmm-model
+    type: training
+    version: v2
+    parameters: [input, output_model, params]
+    parameters_file: components/training/hmm/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /tmp/input/processed_data.csv
+        - name: training-hmm-config
+          path: /tmp/config/training_hmm.json
+      outputs:
+        - name: trained-model
+          path: /tmp/output/hmm_model.pkl
+    limits: {}
+
+  - name: generate-hmm-data
+    type: generation
+    version: v2
+    parameters: [model, output_data, params]
+    parameters_file: components/generation/hmm/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /tmp/input/hmm_model.pkl
+        - name: generation-hmm-config
+          path: /tmp/config/generation_hmm.json
+      outputs:
+        - name: synthetic-data
+          path: /tmp/output/synthetic_data.csv
+    limits: {}
+
+  - name: train-gaussian-process-model
+    type: training
+    version: v2
+    parameters: [data, output_model, params]
+    parameters_file: components/training/gaussian_process/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /tmp/input
+        - name: training-gaussian-process-config
+          path: /tmp/config/training_gaussian_process.json
+      outputs:
+        - name: trained-model
+          path: /tmp/output
+    limits: {}
+
+  - name: generate-gaussian-process-data
+    type: generation
+    version: v2
+    parameters: [model, output_data, params]
+    parameters_file: components/generation/gaussian_process/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /tmp/input
+        - name: generation-gaussian-process-config
+          path: /tmp/config/generation_gaussian_process.json
+      outputs:
+        - name: synthetic-data
+          path: /tmp/output
+    limits: {}
+
+  - name: train-copulas-model
+    type: training
+    version: v2
+    parameters: [data, output_model, params]
+    parameters_file: components/training/copulas/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /tmp/input
+        - name: training-copulas-config
+          path: /tmp/config/training_copulas.json
+      outputs:
+        - name: trained-model
+          path: /tmp/output
+    limits: {}
+
+  - name: generate-copulas-data
+    type: generation
+    version: v2
+    parameters: [model, output_data, params]
+    parameters_file: components/generation/copulas/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /tmp/input
+        - name: generation-copulas-config
+          path: /tmp/config/generation_copulas.json
+      outputs:
+        - name: synthetic-data
+          path: /tmp/output
+    limits: {}
+
+  - name: train-boltzman-machines-model
+    type: training
+    version: v2
+    parameters: [data, output_model, params]
+    parameters_file: components/training/boltzman_machines/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /tmp/input
+        - name: training-boltzman-machines-config
+          path: /tmp/config/training_boltzman_machines.json
+      outputs:
+        - name: trained-model
+          path: /tmp/output
+    limits: {}
+
+  - name: generate-boltzman-machines-data
+    type: generation
+    version: v2
+    parameters: [model, output_data, params]
+    parameters_file: components/generation/boltzman_machines/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /tmp/input
+        - name: generation-boltzman-machines-config
+          path: /tmp/config/generation_boltzman_machines.json
+      outputs:
+        - name: synthetic-data
+          path: /tmp/output
+    limits: {}
+
+  - name: train-bayesian-networks-model
+    type: training
+    version: v2
+    parameters: [data, output_model, params]
+    parameters_file: components/training/bayesian_networks/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /tmp/input
+        - name: training-bayesian-networks-config
+          path: /tmp/config/training_bayesian_networks.json
+      outputs:
+        - name: trained-model
+          path: /tmp/output
+    limits: {}
+
+  - name: generate-bayesian-networks-data
+    type: generation
+    version: v2
+    parameters: [model, output_data, params]
+    parameters_file: components/generation/bayesian_networks/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /tmp/input
+        - name: generation-bayesian-networks-config
+          path: /tmp/config/generation_bayesian_networks.json
+      outputs:
+        - name: synthetic-data
+          path: /tmp/output
+    limits: {}
+
+  - name: data-output
+    type: output
+    version: v1
+    parameters: []
+    artifacts:
+      inputs:
+        - name: final-artifact
+          path: /tmp/output/final_artifact
+      outputs: []
+    limits: {}

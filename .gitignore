@@ -1,1 +1,7 @@
 model
+.next
+node_modules
+.node
+__pycache__
+/.tmp/
+tmp
