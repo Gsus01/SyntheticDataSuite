@@ -6,6 +6,7 @@ export type SubmitWorkflowRequest = {
   sessionId: string;
   nodes: Node<FlowNodeData>[];
   edges: Edge[];
+  workflowId?: string;
 };
 
 export type SubmitWorkflowResult = {
@@ -16,6 +17,13 @@ export type SubmitWorkflowResult = {
   key: string;
   manifestFilename: string;
   cliOutput?: string | null;
+};
+
+export type CompileWorkflowResult = {
+  manifest: string;
+  manifestFilename: string;
+  bucket: string;
+  nodeSlugMap: Record<string, string>;
 };
 
 export type OutputArtifactInfo = {
@@ -67,12 +75,73 @@ export type WorkflowLogFetchRequest = {
   follow?: boolean;
 };
 
+export type WorkflowSummary = {
+  workflowId: string;
+  name: string;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastSubmittedAt?: string | null;
+  lastWorkflowName?: string | null;
+  lastNamespace?: string | null;
+};
+
+export type WorkflowRecord = WorkflowSummary & {
+  sessionId: string;
+  nodes: Node<FlowNodeData>[];
+  edges: Edge[];
+  compiledManifest?: string | null;
+  compiledAt?: string | null;
+  manifestFilename?: string | null;
+  nodeSlugMap?: Record<string, string>;
+  lastBucket?: string | null;
+  lastKey?: string | null;
+  lastManifestFilename?: string | null;
+  lastCliOutput?: string | null;
+};
+
+export type WorkflowSaveRequest = {
+  workflowId?: string;
+  name: string;
+  description?: string | null;
+  sessionId: string;
+  nodes: unknown[];
+  edges: unknown[];
+  compiledManifest?: string | null;
+  manifestFilename?: string | null;
+  nodeSlugMap?: Record<string, string>;
+};
+
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
   return nodes.map(({ id, type, data }) => ({ id, type, data }));
 }
 
 function serializeEdges(edges: Edge[]) {
   return edges.map(({ id, source, target }) => ({ id, source, target }));
+}
+
+export async function compileWorkflow(
+  request: SubmitWorkflowRequest
+): Promise<CompileWorkflowResult> {
+  const response = await fetch(`${API_BASE}/workflow/compile`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sessionId: request.sessionId,
+      nodes: serializeNodes(request.nodes),
+      edges: serializeEdges(request.edges),
+    }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as CompileWorkflowResult;
+  return payload;
 }
 
 export async function submitWorkflow(
@@ -87,6 +156,7 @@ export async function submitWorkflow(
       sessionId: request.sessionId,
       nodes: serializeNodes(request.nodes),
       edges: serializeEdges(request.edges),
+      workflowId: request.workflowId,
     }),
   });
 
@@ -218,4 +288,52 @@ export async function fetchWorkflowStatus(
     updatedAt: raw.updatedAt ?? null,
     nodes: raw.nodes ?? {},
   };
+}
+
+export async function saveWorkflow(request: WorkflowSaveRequest): Promise<WorkflowRecord> {
+  const response = await fetch(`${API_BASE}/workflows`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      workflowId: request.workflowId,
+      name: request.name,
+      description: request.description,
+      sessionId: request.sessionId,
+      nodes: request.nodes,
+      edges: request.edges,
+      compiledManifest: request.compiledManifest,
+      manifestFilename: request.manifestFilename,
+      nodeSlugMap: request.nodeSlugMap,
+    }),
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as WorkflowRecord;
+  return payload;
+}
+
+export async function listWorkflows(): Promise<WorkflowSummary[]> {
+  const response = await fetch(`${API_BASE}/workflows`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as WorkflowSummary[];
+  return payload;
+}
+
+export async function getWorkflow(workflowId: string): Promise<WorkflowRecord> {
+  const response = await fetch(`${API_BASE}/workflows/${workflowId}`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as WorkflowRecord;
+  return payload;
 }

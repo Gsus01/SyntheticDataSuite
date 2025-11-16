@@ -33,6 +33,14 @@ from workflow_builder import (
     suggest_workflow_filename,
 )
 from argo_client import ArgoClient, ArgoClientError, ArgoNotFoundError
+from workflow_store import (
+    WorkflowStore,
+    WorkflowStoreError,
+    WorkflowStoreValidationError,
+    WorkflowNotFoundError as WorkflowDefinitionNotFoundError,
+    StoredWorkflowRecord,
+    StoredWorkflowSummary,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -64,6 +72,78 @@ class WorkflowSubmitResponse(BaseModel):
     key: str
     manifest_filename: str = Field(..., alias="manifestFilename")
     cli_output: Optional[str] = Field(None, alias="cliOutput")
+
+
+class WorkflowCompileResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    manifest: str
+    bucket: str
+    manifest_filename: str = Field(..., alias="manifestFilename")
+    node_slug_map: Dict[str, str] = Field(default_factory=dict, alias="nodeSlugMap")
+
+
+class WorkflowSubmitPayload(WorkflowGraphPayload):
+    workflow_id: Optional[str] = Field(None, alias="workflowId")
+
+
+class WorkflowSavePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_id: Optional[str] = Field(None, alias="workflowId")
+    name: str
+    description: Optional[str] = None
+    session_id: str = Field(..., alias="sessionId")
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
+    compiled_manifest: Optional[str] = Field(None, alias="compiledManifest")
+    manifest_filename: Optional[str] = Field(None, alias="manifestFilename")
+    node_slug_map: Optional[Dict[str, str]] = Field(default_factory=dict, alias="nodeSlugMap")
+
+
+class WorkflowRecordResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_id: str = Field(..., alias="workflowId")
+    name: str
+    description: Optional[str] = None
+    session_id: str = Field(..., alias="sessionId")
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
+    compiled_manifest: Optional[str] = Field(None, alias="compiledManifest")
+    manifest_filename: Optional[str] = Field(None, alias="manifestFilename")
+    compiled_at: Optional[str] = Field(None, alias="compiledAt")
+    node_slug_map: Dict[str, str] = Field(default_factory=dict, alias="nodeSlugMap")
+    created_at: str = Field(..., alias="createdAt")
+    updated_at: str = Field(..., alias="updatedAt")
+    last_workflow_name: Optional[str] = Field(None, alias="lastWorkflowName")
+    last_namespace: Optional[str] = Field(None, alias="lastNamespace")
+    last_bucket: Optional[str] = Field(None, alias="lastBucket")
+    last_key: Optional[str] = Field(None, alias="lastKey")
+    last_manifest_filename: Optional[str] = Field(None, alias="lastManifestFilename")
+    last_cli_output: Optional[str] = Field(None, alias="lastCliOutput")
+    last_submitted_at: Optional[str] = Field(None, alias="lastSubmittedAt")
+
+
+class WorkflowSummaryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_id: str = Field(..., alias="workflowId")
+    name: str
+    description: Optional[str] = None
+    created_at: str = Field(..., alias="createdAt")
+    updated_at: str = Field(..., alias="updatedAt")
+    last_submitted_at: Optional[str] = Field(None, alias="lastSubmittedAt")
+    last_workflow_name: Optional[str] = Field(None, alias="lastWorkflowName")
+    last_namespace: Optional[str] = Field(None, alias="lastNamespace")
+
+
+def _record_to_response(record: StoredWorkflowRecord) -> WorkflowRecordResponse:
+    return WorkflowRecordResponse.model_validate(record.model_dump(by_alias=True))
+
+
+def _summary_to_response(summary: StoredWorkflowSummary) -> WorkflowSummaryResponse:
+    return WorkflowSummaryResponse.model_validate(summary.model_dump(by_alias=True))
 
 
 def _is_final_phase(phase: Optional[str]) -> bool:
@@ -260,6 +340,26 @@ def render_workflow(payload: WorkflowGraphPayload):
     return {"filename": filename, "yaml": yaml_content}
 
 
+@app.post("/workflow/compile", response_model=WorkflowCompileResponse)
+def compile_workflow(payload: WorkflowGraphPayload) -> WorkflowCompileResponse:
+    try:
+        plan = build_workflow_plan(payload)
+        yaml_content = render_workflow_yaml(plan)
+        filename = suggest_workflow_filename(plan)
+    except (UnknownTemplateError, MissingArtifactError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - unexpected
+        raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}") from exc
+
+    node_slug_map = {node_plan.node_id: node_plan.slug for node_plan in plan.tasks()}
+    return WorkflowCompileResponse(
+        manifest=yaml_content,
+        manifestFilename=filename,
+        nodeSlugMap=node_slug_map,
+        bucket=plan.bucket,
+    )
+
+
 def _extract_workflow_name(text: str) -> Optional[str]:
     for line in text.splitlines():
         stripped = line.strip()
@@ -373,7 +473,7 @@ def _fetch_workflow_logs_cli(
 
 
 @app.post("/workflow/submit", response_model=WorkflowSubmitResponse)
-def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
+def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
     try:
         plan = build_workflow_plan(payload)
         yaml_content = render_workflow_yaml(plan)
@@ -414,7 +514,7 @@ def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
         manifest_key,
     )
 
-    return WorkflowSubmitResponse(
+    response = WorkflowSubmitResponse(
         workflowName=submission.workflow_name,
         namespace=submission.namespace,
         nodeSlugMap=node_slug_map,
@@ -423,6 +523,33 @@ def submit_workflow(payload: WorkflowGraphPayload) -> WorkflowSubmitResponse:
         manifestFilename=filename,
         cliOutput=submission.cli_output,
     )
+
+    if payload.workflow_id:
+        store = WorkflowStore()
+        try:
+            store.record_submission(
+                payload.workflow_id,
+                workflow_name=submission.workflow_name,
+                namespace=submission.namespace,
+                bucket=plan.bucket,
+                key=manifest_key,
+                manifest_filename=filename,
+                cli_output=submission.cli_output,
+                node_slug_map=node_slug_map,
+            )
+        except WorkflowDefinitionNotFoundError:
+            logger.warning(
+                "No se encontró el workflow guardado %s para actualizar metadata tras el envío.",
+                payload.workflow_id,
+            )
+        except WorkflowStoreError as exc:
+            logger.error(
+                "No se pudo actualizar la metadata del workflow guardado %s: %s",
+                payload.workflow_id,
+                exc,
+            )
+
+    return response
 
 
 @app.get("/workflow/status", response_model=WorkflowStatusResponse)
@@ -658,3 +785,52 @@ def stream_workflow_logs(
         namespace=resolved_namespace,
         logs=logs,
     )
+
+
+@app.post("/workflows", response_model=WorkflowRecordResponse)
+def save_workflow_definition(payload: WorkflowSavePayload) -> WorkflowRecordResponse:
+    store = WorkflowStore()
+    try:
+        record = store.save_definition(
+            workflow_id=payload.workflow_id,
+            name=payload.name,
+            description=payload.description,
+            session_id=payload.session_id,
+            nodes=payload.nodes,
+            edges=payload.edges,
+            compiled_manifest=payload.compiled_manifest,
+            manifest_filename=payload.manifest_filename,
+            node_slug_map=payload.node_slug_map or {},
+        )
+    except WorkflowDefinitionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkflowStoreValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except WorkflowStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return _record_to_response(record)
+
+
+@app.get("/workflows", response_model=List[WorkflowSummaryResponse])
+def list_workflows() -> List[WorkflowSummaryResponse]:
+    store = WorkflowStore()
+    try:
+        summaries = store.list_workflows()
+    except WorkflowStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return [_summary_to_response(summary) for summary in summaries]
+
+
+@app.get("/workflows/{workflow_id}", response_model=WorkflowRecordResponse)
+def get_workflow_definition(workflow_id: str) -> WorkflowRecordResponse:
+    store = WorkflowStore()
+    try:
+        record = store.get_workflow(workflow_id)
+    except WorkflowDefinitionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkflowStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return _record_to_response(record)
