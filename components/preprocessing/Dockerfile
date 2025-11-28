@@ -8,23 +8,19 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /data/inputs /data/outputs /data/config
+
 # Copiar requirements y instalar dependencias Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el código fuente
 COPY preprocess.py .
-COPY config.yaml .
-
-# Crear directorios para datos
-RUN mkdir -p /app/data/input /app/data/output
+COPY config.yaml /data/config/config.yaml
 
 # Configurar usuario no root para seguridad
-RUN useradd -m -u 1000 preprocessor && chown -R preprocessor:preprocessor /app
+RUN useradd -m -u 1000 preprocessor && chown -R preprocessor:preprocessor /app /data
 USER preprocessor
 
 # Punto de entrada
 ENTRYPOINT ["python", "preprocess.py"]
-
-# Comando por defecto (se puede sobrescribir)
-CMD ["--config", "config.yaml", "--input", "/app/data/input/data.csv", "--output", "/app/data/output/processed_data.csv"]

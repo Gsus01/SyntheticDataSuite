@@ -31,4 +31,14 @@ for dir in components/training/*/; do
   fi
 done
 
+# Construir imágenes de Unity/simulaciones
+for dir in components/unity/*/; do
+  if [ -f "$dir/Dockerfile" ]; then
+    name=$(basename "$dir")
+    image_name=$(echo "$name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
+    echo "Construyendo imagen: ${image_name}:${TAG}"
+    docker build -t ${image_name}:${TAG} "$dir"
+  fi
+done
+
 echo "\nTodas las imágenes han sido construidas con el tag: ${TAG}"

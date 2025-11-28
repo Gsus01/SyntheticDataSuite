@@ -6,19 +6,12 @@ services:
       dockerfile: Dockerfile
     container_name: ts-preprocessor
     volumes:
-      # Montar datos de entrada y salida
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      # Montar configuración personalizada (opcional)
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/sensor_data_with_nulls.csv:/data/inputs/sensor_data_with_nulls.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/processed_sensor_data.csv"
-    ]
 
   rul-batteries-preprocessor:
     build:
@@ -26,19 +19,12 @@ services:
       dockerfile: Dockerfile
     container_name: rb-preprocessor
     volumes:
-      # Montar datos de entrada y salida
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      # Montar configuración personalizada (opcional)
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/Battery_RUL.csv:/data/inputs/Battery_RUL.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/Battery_RUL.csv",
-      "--output", "/app/data/output/processed_sensor_data.csv"
-    ]
     
   # Servicio para testing rápido con docker compose run --rm
   test-preprocessor:
@@ -46,20 +32,14 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/sensor_data_with_nulls.csv:/data/inputs/sensor_data_with_nulls.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - test
-    # Comando por defecto para testing rápido
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/test_processed_data.csv"
-    ]
   
   # Servicio para procesar datos de sensores
   process-sensors:
@@ -67,19 +47,14 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/sensor_data_with_nulls.csv:/data/inputs/sensor_data_with_nulls.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - sensors
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/sensor_data_with_nulls.csv",
-      "--output", "/app/data/output/processed_sensor_data.csv"
-    ]
   
   # Servicio para procesar datos financieros
   process-financial:
@@ -87,19 +62,14 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/financial_data_with_outliers.csv:/data/inputs/financial_data_with_outliers.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - financial
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/financial_data_with_outliers.csv",
-      "--output", "/app/data/output/processed_financial_data.csv"
-    ]
     
   # Servicio para procesar datos con timestamps irregulares
   process-irregular:
@@ -107,19 +77,14 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/irregular_timestamp_data.csv:/data/inputs/irregular_timestamp_data.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - irregular
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/irregular_timestamp_data.csv",
-      "--output", "/app/data/output/processed_irregular_data.csv"
-    ]
     
   # Servicio para procesar datos de tipos mixtos
   process-mixed:
@@ -127,19 +92,14 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data/mixed_data_types.csv:/data/inputs/mixed_data_types.csv:ro
+      - ./output:/data/outputs
+      - ./config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - mixed
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/mixed_data_types.csv",
-      "--output", "/app/data/output/processed_mixed_data.csv"
-    ]
 
   # Servicio para procesar múltiples archivos en paralelo (batch)
   batch-processor:
@@ -148,19 +108,14 @@ services:
       dockerfile: Dockerfile
     container_name: ts-batch-processor
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./output:/app/data/output
-      - ./batch_config.yaml:/app/config.yaml:ro
+      - ./test_data/financial_data_with_outliers.csv:/data/inputs/financial_data_with_outliers.csv:ro
+      - ./output:/data/outputs
+      - ./batch_config.yaml:/data/config/config.yaml:ro
     environment:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - batch
-    command: [
-      "--config", "/app/config.yaml",
-      "--input", "/app/data/input/financial_data_with_outliers.csv",
-      "--output", "/app/data/output/batch_processed_data.csv"
-    ]
 
   # Service for Black-Box testing
   # This service is intentionally minimal; command and specific
@@ -174,14 +129,14 @@ services:
       - PYTHONUNBUFFERED=1
     user: "${UID:-1000}:${GID:-1000}"
     # Standard mount for input test data
-    # ./test_data on host maps to /app/data/input in container
+    # ./test_data on host maps to /data/inputs in container
     # Standard mount for default config
-    # ./config.yaml on host maps to /app/config.yaml in container
+    # ./config.yaml on host maps to /data/config/config.yaml in container
     # Note: The test scripts will dynamically add mounts for output directories
     # and custom configuration files using 'docker compose run -v ...'
     volumes:
-      - ./test_data:/app/data/input:ro
-      - ./config.yaml:/app/config.yaml:ro
+      - ./test_data:/data/inputs:ro
+      - ./config.yaml:/data/config/config.yaml:ro
       # The test_container_execution.py script will add:
-      # -v <host_temp_output_dir>:/app/data/output
-      # -v <host_temp_custom_config_dir>:/app/custom_config_vol (for custom config tests)
+      # -v <host_temp_output_dir>:/data/outputs
+      # -v <host_temp_custom_config_dir>:/data/config/custom (for custom config tests)

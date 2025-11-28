@@ -1,15 +1,28 @@
 import pandas as pd
 import json
 import argparse
-import os
 import joblib
 from pathlib import Path
 from pgmpy.models import DiscreteBayesianNetwork
 from pgmpy.estimators import HillClimbSearch, BIC, MaximumLikelihoodEstimator
 import logging
 
+DEFAULT_INPUT_DIR = "/data/inputs"
+DEFAULT_OUTPUT_DIR = "/data/outputs"
+DEFAULT_CONFIG_DIR = "/data/config"
+
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+def discover_file(directory: Path, patterns, description: str) -> Path:
+    if not directory.exists():
+        raise FileNotFoundError(f"Directorio no encontrado para {description}: {directory}")
+    for pattern in patterns:
+        matches = sorted(directory.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No se encontraron archivos {description} en {directory} (patrones: {', '.join(patterns)})")
 
 class TimeSeriesBayesianGenerator:
     def __init__(self, df, id_col='ID', index_col='Cycle_Index', discretization_quantiles=3, unique_values_threshold=5):
@@ -146,22 +159,31 @@ class TimeSeriesBayesianGenerator:
 
 def main():
     parser = argparse.ArgumentParser(description="Entrena un modelo bayesiano de series temporales.")
-    parser.add_argument("--input_path", required=True, help="Ruta del archivo de entrada (.csv o .txt)")
-    parser.add_argument("--output_path", required=True, help="Ruta donde guardar el modelo")
-    parser.add_argument("--config", required=True, help="Ruta al archivo de configuración JSON.")
+    parser.add_argument("--input-dir", default=DEFAULT_INPUT_DIR, help="Directorio que contiene el archivo de entrada (.csv o .txt)")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directorio donde guardar el modelo")
+    parser.add_argument("--config-dir", default=DEFAULT_CONFIG_DIR, help="Directorio con el archivo de configuración JSON.")
     args = parser.parse_args()
 
-    # Cargar la configuración desde el archivo JSON
-    if not Path(args.config).exists():
-        logging.error(f"El archivo de configuración no se encontró en: {args.config}")
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    config_dir = Path(args.config_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        config_path = discover_file(config_dir, ["*.json"], "de configuración JSON")
+        input_path = discover_file(input_dir, ["*.csv", "*.txt"], "de datos de entrada")
+    except FileNotFoundError as exc:
+        logging.error(exc)
         exit(1)
 
-    with open(args.config, 'r') as f:
+    # Cargar la configuración desde el archivo JSON
+    with open(config_path, 'r') as f:
         config = json.load(f)
+    logging.info(f"Configuración cargada desde {config_path}")
 
     # Validar que las claves necesarias están en la configuración
     required_keys = [
-        "input_file_path", "output_model_path", "id_column_name",
+        "id_column_name",
         "index_column_name", "discretization_quantiles", "unique_values_threshold"
     ]
     for key in required_keys:
@@ -169,17 +191,10 @@ def main():
             logging.error(f"Falta la clave requerida '{key}' en el archivo de configuración JSON.")
             exit(1)
 
-    input_path = args.input_path
-    output_path = args.output_path
     id_col = config["id_column_name"]
     index_col = config["index_column_name"]
     discretization_quantiles = config["discretization_quantiles"]
     unique_values_threshold = config["unique_values_threshold"]
-
-    # Verificar que el archivo de entrada existe
-    if not Path(input_path).exists():
-        logging.error(f"El archivo de datos de entrada no se encontró en: {input_path}")
-        exit(1)
 
     df = pd.read_csv(input_path)
     logging.info(f"Archivo de datos CSV '{input_path}' cargado exitosamente.")
@@ -196,10 +211,7 @@ def main():
     logging.info("Entrenando modelo bayesiano temporal...")
     generator.fit()
 
-    # Asegurarse de que el directorio de salida existe
-    output_dir = Path(output_path).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+    output_path = output_dir / "bayesian_network_model.pkl"
     joblib.dump(generator, output_path)
     logging.info(f"Modelo guardado exitosamente en {output_path}")
 

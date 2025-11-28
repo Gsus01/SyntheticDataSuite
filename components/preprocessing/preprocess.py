@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 
+DEFAULT_INPUT_DIR = "/data/inputs"
+DEFAULT_OUTPUT_DIR = "/data/outputs"
+DEFAULT_CONFIG_DIR = "/data/config"
+
 
 class TimeSeriesPreprocessor:
     """Procesador de series temporales configurable"""
@@ -296,6 +300,17 @@ def load_config(config_path: str) -> Dict[str, Any]:
         sys.exit(1)
 
 
+def discover_file(directory: Path, patterns: List[str], description: str) -> Path:
+    """Return the first file matching the provided patterns inside the directory."""
+    if not directory.exists():
+        raise FileNotFoundError(f"El directorio {directory} no existe para {description}")
+    for pattern in patterns:
+        matches = sorted(directory.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No se encontraron archivos {description} en {directory} (patrones: {', '.join(patterns)})")
+
+
 def main():
 
     logging.basicConfig(
@@ -306,28 +321,33 @@ def main():
 
     """Función principal"""
     parser = argparse.ArgumentParser(description='Preprocesador de series temporales')
-    parser.add_argument('--config', required=True, help='Archivo de configuración YAML')
-    parser.add_argument('--input', required=True, help='Archivo CSV de entrada')
-    parser.add_argument('--output', required=True, help='Archivo CSV de salida')
+    parser.add_argument('--config-dir', default=DEFAULT_CONFIG_DIR, help='Directorio que contiene el YAML de configuración')
+    parser.add_argument('--input-dir', default=DEFAULT_INPUT_DIR, help='Directorio con los archivos CSV de entrada')
+    parser.add_argument('--output-dir', default=DEFAULT_OUTPUT_DIR, help='Directorio donde guardar el CSV procesado')
     
     args = parser.parse_args()
     
-    # Validar archivos
-    if not Path(args.config).exists():
-        logging.critical(f"Error: Archivo de configuración no encontrado: {args.config}")
+    config_dir = Path(args.config_dir)
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+
+    try:
+        config_path = discover_file(config_dir, ["*.yaml", "*.yml"], "de configuración YAML")
+        input_path = discover_file(input_dir, ["*.csv"], "CSV de entrada")
+    except FileNotFoundError as exc:
+        logging.critical(f"Error: {exc}")
         sys.exit(1)
-        
-    if not Path(args.input).exists():
-        logging.critical(f"Error: Archivo de entrada no encontrado en el pod: {args.input}")
-        sys.exit(1)
-        
-    # Crear directorio de salida si no existe
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"preprocessed_{input_path.stem}.csv"
+    logging.info(f"Usando configuración: {config_path}")
+    logging.info(f"Archivo de entrada detectado: {input_path}")
+    logging.info(f"Archivo de salida configurado en: {output_path}")
     
     # Cargar configuración y procesar
-    config = load_config(args.config)
+    config = load_config(config_path)
     preprocessor = TimeSeriesPreprocessor(config)
-    preprocessor.process(args.input, args.output)
+    preprocessor.process(str(input_path), str(output_path))
 
 
 if __name__ == "__main__":

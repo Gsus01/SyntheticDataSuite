@@ -7,8 +7,22 @@ import joblib
 import logging
 from pathlib import Path
 
+DEFAULT_INPUT_DIR = "/data/inputs"
+DEFAULT_OUTPUT_DIR = "/data/outputs"
+DEFAULT_CONFIG_DIR = "/data/config"
+
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+def discover_file(directory: Path, patterns, description: str) -> Path:
+    if not directory.exists():
+        raise FileNotFoundError(f"Directorio no encontrado para {description}: {directory}")
+    for pattern in patterns:
+        matches = sorted(directory.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No se encontraron archivos {description} en {directory} (patrones: {', '.join(patterns)})")
 
 def generate_gp_series(model_dict, n_series, series_length, start_id):
     models = model_dict["models"]
@@ -30,13 +44,26 @@ def generate_gp_series(model_dict, n_series, series_length, start_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Genera datos sintéticos con modelos GP multivariados.")
-    parser.add_argument("--model_path", required=True, help="Ruta al archivo .pkl del modelo")
-    parser.add_argument("--output_path", required=True, help="Ruta de salida para los datos sintéticos")
-    parser.add_argument("--config", required=True, help="Ruta al archivo JSON con configuración")
+    parser.add_argument("--input-dir", default=DEFAULT_INPUT_DIR, help="Directorio que contiene el modelo entrenado")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directorio donde guardar los datos sintéticos")
+    parser.add_argument("--config-dir", default=DEFAULT_CONFIG_DIR, help="Directorio con el archivo JSON de configuración")
     args = parser.parse_args()
 
-    with open(args.config, "r") as f:
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    config_dir = Path(args.config_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        config_path = discover_file(config_dir, ["*.json"], "de configuración JSON")
+        model_path = discover_file(input_dir, ["*.pkl", "*.joblib"], "de modelo entrenado")
+    except FileNotFoundError as exc:
+        logging.error(exc)
+        exit(1)
+
+    with open(config_path, "r") as f:
         config = json.load(f)
+    logging.info(f"Configuración cargada desde {config_path}")
 
     required_keys = ["n_series", "series_length", "start_id"]
     for key in required_keys:
@@ -44,13 +71,8 @@ def main():
             logging.error(f"Falta la clave requerida '{key}' en el JSON.")
             exit(1)
 
-    model_path = Path(args.model_path)
-    if not model_path.exists():
-        logging.error(f"Archivo del modelo no encontrado en: {model_path}")
-        exit(1)
-
     model_dict = joblib.load(model_path)
-    logging.info("Modelo cargado correctamente.")
+    logging.info(f"Modelo cargado correctamente desde {model_path}")
 
     df_synthetic = generate_gp_series(
         model_dict,
@@ -59,8 +81,7 @@ def main():
         config["start_id"]
     )
 
-    output_path = Path(args.output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"synthetic_{model_path.stem}.csv"
     df_synthetic.to_csv(output_path, index=False)
     logging.info(f"Datos sintéticos guardados en {output_path}")
 

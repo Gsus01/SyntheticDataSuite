@@ -1,4 +1,5 @@
 FROM python:3.12-slim
+RUN mkdir -p /data/inputs /data/outputs /data/config
 
 
 

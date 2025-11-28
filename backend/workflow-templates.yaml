@@ -3,29 +3,20 @@ templates:
     inputs:
       artifacts:
         - name: source-data
-          path: /tmp/input/data.csv
+          path: /data/inputs/input.csv
         - name: preprocessing-config
-          path: /tmp/config/preprocessing.yaml
+          path: /data/config/preprocessing.yaml
     securityContext:
       runAsUser: 0
       runAsGroup: 0
     container:
-      image: docker.io/library/preprocessing:v2
+      image: docker.io/library/preprocessing:latest
       imagePullPolicy: Never
       command: [python, preprocess.py]
-      args:
-        [
-          "--config",
-          "{{inputs.artifacts.preprocessing-config.path}}",
-          "--input",
-          "{{inputs.artifacts.source-data.path}}",
-          "--output",
-          "/tmp/output/processed_data.csv",
-        ]
     outputs:
       artifacts:
         - name: processed-data
-          path: /tmp/output/processed_data.csv
+          path: /data/outputs/preprocessed_input.csv
           archive:
             none: {}
 
@@ -33,28 +24,19 @@ templates:
     inputs:
       artifacts:
         - name: processed-data
-          path: /tmp/input/processed_data.csv
+          path: /data/inputs/preprocessed_input.csv
           archive:
             none: {}
         - name: training-hmm-config
-          path: /tmp/config/training_hmm.json
+          path: /data/config/training_hmm.json
     container:
-      image: docker.io/library/training-hmm:v2
+      image: docker.io/library/training-hmm:latest
       imagePullPolicy: Never
       command: [python, entrenar_modelo.py]
-      args:
-        [
-          "--input",
-          "/tmp/input/processed_data.csv",
-          "--output_model",
-          "/tmp/output/hmm_model.pkl",
-          "--params",
-          "{{inputs.artifacts.training-hmm-config.path}}",
-        ]
     outputs:
       artifacts:
         - name: trained-model
-          path: /tmp/output/hmm_model.pkl
+          path: /data/outputs/hmm_model.pkl
           archive:
             none: {}
 
@@ -62,28 +44,19 @@ templates:
     inputs:
       artifacts:
         - name: trained-model
-          path: /tmp/input/hmm_model.pkl
+          path: /data/inputs/hmm_model.pkl
           archive:
             none: {}
         - name: generation-hmm-config
-          path: /tmp/config/generation_hmm.json
+          path: /data/config/generation_hmm.json
     container:
-      image: docker.io/library/generation-hmm:v2
+      image: docker.io/library/generation-hmm:latest
       imagePullPolicy: Never
       command: [python, generar_datos.py]
-      args:
-        [
-          "--model",
-          "/tmp/input/hmm_model.pkl",
-          "--output_data",
-          "/tmp/output/synthetic_data.csv",
-          "--params",
-          "{{inputs.artifacts.generation-hmm-config.path}}",
-        ]
     outputs:
       artifacts:
         - name: synthetic-data
-          path: /tmp/output/synthetic_data.csv
+          path: /data/outputs/synthetic_hmm_model.csv
           archive:
             none: {}
 
@@ -91,27 +64,19 @@ templates:
     inputs:
       artifacts:
         - name: processed-data
-          path: /tmp/input/processed_data.csv
+          path: /data/inputs/preprocessed_input.csv
           archive:
             none: {}
         - name: training-gaussian-process-config
-          path: /tmp/config/training_gaussian_process.json
+          path: /data/config/training_gaussian_process.json
     container:
-      image: docker.io/library/training-gaussian_process:v2
+      image: docker.io/library/training-gaussian_process:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--data",
-          "/tmp/input/processed_data.csv",
-          "--output_model",
-          "/tmp/output/gp_model.pkl",
-          "--params",
-          "{{inputs.artifacts.training-gaussian-process-config.path}}",
-        ]
+      command: [python, model_generation.py]
     outputs:
       artifacts:
         - name: trained-model
-          path: /tmp/output/gp_model.pkl
+          path: /data/outputs/gaussian_process_model.pkl
           archive:
             none: {}
 
@@ -119,27 +84,19 @@ templates:
     inputs:
       artifacts:
         - name: trained-model
-          path: /tmp/input/gp_model.pkl
+          path: /data/inputs/gaussian_process_model.pkl
           archive:
             none: {}
         - name: generation-gaussian-process-config
-          path: /tmp/config/generation_gaussian_process.json
+          path: /data/config/generation_gaussian_process.json
     container:
-      image: docker.io/library/generation-gaussian_process:v2
+      image: docker.io/library/generation-gaussian_process:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--model",
-          "/tmp/input/gp_model.pkl",
-          "--output_data",
-          "/tmp/output/synthetic_data.csv",
-          "--params",
-          "{{inputs.artifacts.generation-gaussian-process-config.path}}",
-        ]
+      command: [python, data_generation.py]
     outputs:
       artifacts:
         - name: synthetic-data
-          path: /tmp/output/synthetic_data.csv
+          path: /data/outputs/synthetic_gaussian_process_model.csv
           archive:
             none: {}
 
@@ -147,27 +104,19 @@ templates:
     inputs:
       artifacts:
         - name: processed-data
-          path: /tmp/input/processed_data.csv
+          path: /data/inputs/preprocessed_input.csv
           archive:
             none: {}
         - name: training-copulas-config
-          path: /tmp/config/training_copulas.json
+          path: /data/config/training_copulas.json
     container:
-      image: docker.io/library/training-copulas:v2
+      image: docker.io/library/training-copulas:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--data",
-          "/tmp/input/processed_data.csv",
-          "--output_model",
-          "/tmp/output/copulas_model.pkl",
-          "--params",
-          "{{inputs.artifacts.training-copulas-config.path}}",
-        ]
+      command: [python, model_generation.py]
     outputs:
       artifacts:
         - name: trained-model
-          path: /tmp/output/copulas_model.pkl
+          path: /data/outputs/copulas_model.pkl
           archive:
             none: {}
 
@@ -175,27 +124,19 @@ templates:
     inputs:
       artifacts:
         - name: trained-model
-          path: /tmp/input/copulas_model.pkl
+          path: /data/inputs/copulas_model.pkl
           archive:
             none: {}
         - name: generation-copulas-config
-          path: /tmp/config/generation_copulas.json
+          path: /data/config/generation_copulas.json
     container:
-      image: docker.io/library/generation-copulas:v2
+      image: docker.io/library/generation-copulas:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--model",
-          "/tmp/input/copulas_model.pkl",
-          "--output_data",
-          "/tmp/output/synthetic_data.csv",
-          "--params",
-          "{{inputs.artifacts.generation-copulas-config.path}}",
-        ]
+      command: [python, data_generation.py]
     outputs:
       artifacts:
         - name: synthetic-data
-          path: /tmp/output/synthetic_data.csv
+          path: /data/outputs/synthetic_copulas_model.csv
           archive:
             none: {}
 
@@ -203,27 +144,19 @@ templates:
     inputs:
       artifacts:
         - name: processed-data
-          path: /tmp/input/processed_data.csv
+          path: /data/inputs/preprocessed_input.csv
           archive:
             none: {}
         - name: training-boltzman-machines-config
-          path: /tmp/config/training_boltzman_machines.json
+          path: /data/config/training_boltzman_machines.json
     container:
-      image: docker.io/library/training-boltzman_machines:v2
+      image: docker.io/library/training-boltzman_machines:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--data",
-          "/tmp/input/processed_data.csv",
-          "--output_model",
-          "/tmp/output/rbm_model.pkl",
-          "--params",
-          "{{inputs.artifacts.training-boltzman-machines-config.path}}",
-        ]
+      command: [python, model_generation.py]
     outputs:
       artifacts:
         - name: trained-model
-          path: /tmp/output/rbm_model.pkl
+          path: /data/outputs/rbm_model.pkl
           archive:
             none: {}
 
@@ -231,27 +164,19 @@ templates:
     inputs:
       artifacts:
         - name: trained-model
-          path: /tmp/input/rbm_model.pkl
+          path: /data/inputs/rbm_model.pkl
           archive:
             none: {}
         - name: generation-boltzman-machines-config
-          path: /tmp/config/generation_boltzman_machines.json
+          path: /data/config/generation_boltzman_machines.json
     container:
-      image: docker.io/library/generation-boltzman_machines:v2
+      image: docker.io/library/generation-boltzman_machines:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--model",
-          "/tmp/input/rbm_model.pkl",
-          "--output_data",
-          "/tmp/output/synthetic_data.csv",
-          "--params",
-          "{{inputs.artifacts.generation-boltzman-machines-config.path}}",
-        ]
+      command: [python, data_generation.py]
     outputs:
       artifacts:
         - name: synthetic-data
-          path: /tmp/output/synthetic_data.csv
+          path: /data/outputs/synthetic_rbm_model.csv
           archive:
             none: {}
 
@@ -259,27 +184,19 @@ templates:
     inputs:
       artifacts:
         - name: processed-data
-          path: /tmp/input/processed_data.csv
+          path: /data/inputs/preprocessed_input.csv
           archive:
             none: {}
         - name: training-bayesian-networks-config
-          path: /tmp/config/training_bayesian_networks.json
+          path: /data/config/training_bayesian_networks.json
     container:
-      image: docker.io/library/training-bayesian_networks:v2
+      image: docker.io/library/training-bayesian_networks:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--data",
-          "/tmp/input/processed_data.csv",
-          "--output_model",
-          "/tmp/output/bn_model.pkl",
-          "--params",
-          "{{inputs.artifacts.training-bayesian-networks-config.path}}",
-        ]
+      command: [python, model_generation.py]
     outputs:
       artifacts:
         - name: trained-model
-          path: /tmp/output/bn_model.pkl
+          path: /data/outputs/bayesian_network_model.pkl
           archive:
             none: {}
 
@@ -287,27 +204,41 @@ templates:
     inputs:
       artifacts:
         - name: trained-model
-          path: /tmp/input/bn_model.pkl
+          path: /data/inputs/bayesian_network_model.pkl
           archive:
             none: {}
         - name: generation-bayesian-networks-config
-          path: /tmp/config/generation_bayesian_networks.json
+          path: /data/config/generation_bayesian_networks.json
     container:
-      image: docker.io/library/generation-bayesian_networks:v2
+      image: docker.io/library/generation-bayesian_networks:latest
       imagePullPolicy: Never
-      args:
-        [
-          "--model",
-          "/tmp/input/bn_model.pkl",
-          "--output_data",
-          "/tmp/output/synthetic_data.csv",
-          "--params",
-          "{{inputs.artifacts.generation-bayesian-networks-config.path}}",
-        ]
+      command: [python, data_generation.py]
     outputs:
       artifacts:
         - name: synthetic-data
-          path: /tmp/output/synthetic_data.csv
+          path: /data/outputs/synthetic_bayesian_network_model.csv
           archive:
             none: {}
 
+  bouncing-ball:
+    inputs:
+      artifacts:
+        - name: bouncing-ball-config
+          path: /tmp/config/bouncing_ball.json
+    container:
+      image: docker.io/library/bouncing-ball:latest
+      imagePullPolicy: Never
+      command: [python3, /app/run_simulation.py]
+      args:
+        [
+          "--config",
+          "{{inputs.artifacts.bouncing-ball-config.path}}",
+          "--output",
+          "/tmp/output/bouncing_ball.json",
+        ]
+    outputs:
+      artifacts:
+        - name: bouncing-ball-output
+          path: /tmp/output/bouncing_ball.json
+          archive:
+            none: {}

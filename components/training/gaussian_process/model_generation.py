@@ -9,8 +9,22 @@ from pathlib import Path
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
+DEFAULT_INPUT_DIR = "/data/inputs"
+DEFAULT_OUTPUT_DIR = "/data/outputs"
+DEFAULT_CONFIG_DIR = "/data/config"
+
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+def discover_file(directory: Path, patterns, description: str) -> Path:
+    if not directory.exists():
+        raise FileNotFoundError(f"Directorio no encontrado para {description}: {directory}")
+    for pattern in patterns:
+        matches = sorted(directory.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No se encontraron archivos {description} en {directory} (patrones: {', '.join(patterns)})")
 
 def train_gp_models(df, id_col, time_col, target_cols):
     models = {}
@@ -34,13 +48,26 @@ def train_gp_models(df, id_col, time_col, target_cols):
 
 def main():
     parser = argparse.ArgumentParser(description="Entrena modelos Gaussian Process para series multivariadas.")
-    parser.add_argument("--input_path", required=True, help="Ruta al archivo CSV de entrada")
-    parser.add_argument("--output_model_path", required=True, help="Ruta para guardar el modelo entrenado (.pkl)")
-    parser.add_argument("--config", required=True, help="Ruta al archivo JSON con la configuración")
+    parser.add_argument("--input-dir", default=DEFAULT_INPUT_DIR, help="Directorio que contiene el archivo CSV de entrada")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directorio donde guardar el modelo entrenado (.pkl)")
+    parser.add_argument("--config-dir", default=DEFAULT_CONFIG_DIR, help="Directorio con el archivo JSON de configuración")
     args = parser.parse_args()
 
-    with open(args.config, "r") as f:
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    config_dir = Path(args.config_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        config_path = discover_file(config_dir, ["*.json"], "de configuración JSON")
+        input_path = discover_file(input_dir, ["*.csv"], "de datos de entrada")
+    except FileNotFoundError as exc:
+        logging.error(exc)
+        exit(1)
+
+    with open(config_path, "r") as f:
         config = json.load(f)
+    logging.info(f"Configuración cargada desde {config_path}")
 
     required_keys = ["id_column", "time_column", "target_columns"]
     for key in required_keys:
@@ -52,19 +79,20 @@ def main():
     time_col = config["time_column"]
     target_cols = config["target_columns"]
 
-    df = pd.read_csv(args.input_path)
-    logging.info(f"Datos cargados desde {args.input_path}, columnas objetivo: {target_cols}")
+    df = pd.read_csv(input_path)
+    logging.info(f"Datos cargados desde {input_path}, columnas objetivo: {target_cols}")
 
     models = train_gp_models(df, id_col, time_col, target_cols)
 
+    output_path = output_dir / "gaussian_process_model.pkl"
     joblib.dump({
         "models": models,
         "id_col": id_col,
         "time_col": time_col,
         "target_cols": target_cols
-    }, args.output_model_path)
+    }, output_path)
 
-    logging.info(f"Modelos guardados en {args.output_model_path}")
+    logging.info(f"Modelos guardados en {output_path}")
 
 if __name__ == "__main__":
     main()
