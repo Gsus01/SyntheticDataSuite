@@ -185,6 +185,22 @@ nodes:
           path: /data/outputs/synthetic_bayesian_network_model.csv
     limits: {}
 
+  - name: train-gym-pybullet-rl
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/rl/gym-pybullet/variables.json
+    artifacts:
+      inputs:
+        - name: training-gym-pybullet-config
+          path: /data/config/variables.json
+      outputs:
+        - name: rl-metrics
+          path: /data/outputs/metrics.json
+        - name: rl-results
+          path: /data/outputs/results
+    limits: {}
+
   - name: bouncing-ball
     type: generation
     version: v1

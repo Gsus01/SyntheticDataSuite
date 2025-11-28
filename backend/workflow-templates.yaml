@@ -220,6 +220,26 @@ templates:
           archive:
             none: {}
 
+  train-gym-pybullet-rl:
+    inputs:
+      artifacts:
+        - name: training-gym-pybullet-config
+          path: /data/config/variables.json
+    container:
+      image: docker.io/library/rl-gym-pybullet:latest
+      imagePullPolicy: Never
+      command: [python, /app/rl_example.py]
+    outputs:
+      artifacts:
+        - name: rl-metrics
+          path: /data/outputs/metrics.json
+          archive:
+            none: {}
+        - name: rl-results
+          path: /data/outputs/results
+          archive:
+            none: {}
+
   bouncing-ball:
     inputs:
       artifacts:

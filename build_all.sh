@@ -31,6 +31,15 @@ for dir in components/training/*/; do
   fi
 done
 
+# Construir imágenes de RL
+for dir in components/rl/*/; do
+  if [ -f "$dir/Dockerfile" ]; then
+    name=$(basename "$dir")
+    echo "Construyendo imagen: rl-$name:${TAG}"
+    docker build -t rl-$name:${TAG} "$dir"
+  fi
+done
+
 # Construir imágenes de Unity/simulaciones
 for dir in components/unity/*/; do
   if [ -f "$dir/Dockerfile" ]; then
