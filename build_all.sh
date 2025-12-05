@@ -1,13 +1,23 @@
 #!/bin/bash
 # build_all.sh - Construye las imágenes Docker de todos los componentes principales
 # Uso: bash build_all.sh [TAG]
-
-# Para construilas en el entorno de minikube:
-# eval $(minikube docker-env)
+#
+# Por defecto construye en el Docker de minikube. Para construir en Docker local:
+#   SKIP_MINIKUBE_ENV=1 ./build_all.sh
 
 set -e
 
 TAG=${1:-latest}
+
+# Configurar el entorno Docker de minikube (a menos que se indique lo contrario)
+if [ -z "$SKIP_MINIKUBE_ENV" ]; then
+  if command -v minikube &> /dev/null; then
+    echo "Configurando entorno Docker de minikube..."
+    eval $(minikube docker-env)
+  else
+    echo "WARN: minikube no encontrado. Usando Docker local."
+  fi
+fi
 
 # Construir imagen de preprocessing
 echo "Construyendo imagen: preprocessing:${TAG}"

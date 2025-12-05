@@ -687,7 +687,7 @@ export default function WorkflowTerminal({
           <div className="h-2 cursor-row-resize border-b border-gray-800" onMouseDown={handleResizeStart} />
           <div className="space-y-2 border-b border-gray-800 px-3 py-2 text-[11px] text-gray-300">
             {submitError && (
-              <div className="rounded border border-red-500/40 bg-red-900/20 px-3 py-2 text-[11px] text-red-300">
+              <div className="rounded border border-red-500/40 bg-red-900/20 px-3 py-2 text-[11px] text-red-300 whitespace-pre-wrap font-mono">
                 {submitError}
               </div>
             )}
