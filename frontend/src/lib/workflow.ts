@@ -113,11 +113,22 @@ export type WorkflowSaveRequest = {
 };
 
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
-  return nodes.map(({ id, type, data }) => ({ id, type, data }));
+  return nodes.map(({ id, type, data }) => {
+    const { runtimeStatus, artifactPorts, ...rest } = data;
+    void runtimeStatus;
+    void artifactPorts;
+    return { id, type, data: rest };
+  });
 }
 
 function serializeEdges(edges: Edge[]) {
-  return edges.map(({ id, source, target }) => ({ id, source, target }));
+  return edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
+    id,
+    source,
+    target,
+    ...(sourceHandle ? { sourceHandle } : {}),
+    ...(targetHandle ? { targetHandle } : {}),
+  }));
 }
 
 export async function compileWorkflow(

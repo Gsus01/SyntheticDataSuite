@@ -18,6 +18,16 @@ export type WorkflowNodeRuntimeStatus = {
   finishedAt?: string | null;
 };
 
+export type NodeArtifactPort = {
+  name: string;
+  path?: string | null;
+};
+
+export type FlowNodePorts = {
+  inputs: NodeArtifactPort[];
+  outputs: NodeArtifactPort[];
+};
+
 export type FlowNodeData = {
   label: string;
   tone?: string;
@@ -27,5 +37,5 @@ export type FlowNodeData = {
   parameters?: Record<string, unknown>;
   uploadedArtifact?: NodeArtifact;
   runtimeStatus?: WorkflowNodeRuntimeStatus;
+  artifactPorts?: FlowNodePorts;
 };
-

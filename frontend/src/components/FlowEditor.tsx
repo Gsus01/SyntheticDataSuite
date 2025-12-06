@@ -18,7 +18,13 @@ import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNod
 import NodeInspector from "@/components/NodeInspector";
 import WorkflowTerminal from "@/components/WorkflowTerminal";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
-import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
+import {
+  buildTemplateIndex,
+  computeConnectablePorts,
+  fetchNodeTemplates,
+  type CatalogNodeTemplate,
+} from "@/lib/node-templates";
+import type { FlowNodeData, FlowNodePorts, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import {
   submitWorkflow,
   fetchWorkflowStatus,
@@ -59,7 +65,35 @@ type DragMetaPayload = {
   templateName?: unknown;
   parameterKeys?: unknown;
   parameterDefaults?: unknown;
+  artifactPorts?: unknown;
 };
+
+function normalizePortsFromMeta(payload: unknown): FlowNodePorts | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const raw = payload as Partial<FlowNodePorts>;
+  const normalizeList = (value: unknown): FlowNodePorts["inputs"] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const name = (item as { name?: unknown }).name;
+        if (typeof name !== "string") return null;
+        const path = (item as { path?: unknown }).path;
+        return {
+          name,
+          path: typeof path === "string" || path === null ? path : undefined,
+        };
+      })
+      .filter((item): item is { name: string; path?: string | null } => Boolean(item));
+  };
+
+  const inputs = normalizeList(raw.inputs);
+  const outputs = normalizeList(raw.outputs);
+  if (!inputs.length && !outputs.length) {
+    return { inputs: [], outputs: [] };
+  }
+  return { inputs, outputs };
+}
 
 function generateSessionId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -141,6 +175,7 @@ function EditorInner() {
   const [summariesLoading, setSummariesLoading] = React.useState(false);
   const [summariesError, setSummariesError] = React.useState<string | null>(null);
   const [loadingWorkflowId, setLoadingWorkflowId] = React.useState<string | null>(null);
+  const [templateIndex, setTemplateIndex] = React.useState<Record<string, CatalogNodeTemplate>>({});
   const statusPollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusAbortRef = React.useRef(false);
   const isReadyToSend = Boolean(compiledState && !isCompileDirty);
@@ -230,6 +265,53 @@ function EditorInner() {
   React.useEffect(() => {
     ensureInitialRuntimeStatus();
   }, [ensureInitialRuntimeStatus]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadTemplates = async () => {
+      try {
+        const templates = await fetchNodeTemplates();
+        if (!cancelled) {
+          setTemplateIndex(buildTemplateIndex(templates));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("No se pudo cargar el catálogo para pintar puertos:", error);
+        }
+      }
+    };
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!Object.keys(templateIndex).length) {
+      return;
+    }
+    setNodes((prev) => {
+      let changed = false;
+      const next = prev.map((node) => {
+        if (node.data.artifactPorts || !node.data.templateName) {
+          return node;
+        }
+        const template = templateIndex[node.data.templateName];
+        if (!template) {
+          return node;
+        }
+        changed = true;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            artifactPorts: computeConnectablePorts(template.artifacts),
+          },
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [setNodes, templateIndex]);
 
   const isSameRuntimeStatus = React.useCallback(
     (a?: WorkflowNodeRuntimeStatus, b?: WorkflowNodeRuntimeStatus) => {
@@ -365,6 +447,12 @@ function EditorInner() {
         meta?.parameterDefaults && typeof meta.parameterDefaults === "object"
           ? (meta.parameterDefaults as Record<string, unknown>)
           : undefined;
+      const metaPorts = normalizePortsFromMeta(meta?.artifactPorts);
+      const templatePorts =
+        !metaPorts && templateName && templateIndex[templateName]
+          ? computeConnectablePorts(templateIndex[templateName].artifacts)
+          : undefined;
+      const artifactPorts = metaPorts ?? templatePorts;
 
       const newNodeId = getId();
       const newNode: Node<FlowNodeData> = {
@@ -377,6 +465,7 @@ function EditorInner() {
           ...(templateName ? { templateName } : {}),
           ...(parameterKeys ? { parameterKeys } : {}),
           ...(parameterDefaults ? { parameterDefaults } : {}),
+          ...(artifactPorts ? { artifactPorts } : {}),
           ...(type === NODE_TYPES.nodeDefault
             ? { runtimeStatus: createPendingStatus(newNodeId) }
             : {}),
@@ -386,7 +475,7 @@ function EditorInner() {
       setNodes((nds) => nds.concat(newNode));
       markDirty("all");
     },
-    [markDirty, project, setNodes]
+    [markDirty, project, setNodes, templateIndex]
   );
 
   const handleSelectionChange = useCallback(
@@ -446,12 +535,20 @@ function EditorInner() {
     (record: WorkflowRecord) => {
       cancelStatusPolling();
       const safeNodes =
-        record.nodes?.map((node) => ({
-          ...node,
-          data: {
-            ...node.data,
-          },
-        })) ?? [];
+        record.nodes?.map((node) => {
+          const ports =
+            node.data.artifactPorts ||
+            (node.data.templateName && templateIndex[node.data.templateName]
+              ? computeConnectablePorts(templateIndex[node.data.templateName].artifacts)
+              : undefined);
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              ...(ports ? { artifactPorts: ports } : {}),
+            },
+          };
+        }) ?? [];
       const safeEdges = record.edges?.map((edge) => ({ ...edge })) ?? [];
       setNodes(safeNodes);
       setEdges(safeEdges);
@@ -488,7 +585,7 @@ function EditorInner() {
       }
       ensureInitialRuntimeStatus();
     },
-    [cancelStatusPolling, ensureInitialRuntimeStatus, setEdges, setNodes]
+    [cancelStatusPolling, ensureInitialRuntimeStatus, setEdges, setNodes, templateIndex]
   );
 
   const openSaveModal = useCallback(() => {
@@ -633,14 +730,6 @@ function EditorInner() {
     [applyWorkflowRecord]
   );
 
-  const handleNewWorkflowClick = useCallback(() => {
-    if (hasUnsavedChanges && nodes.length > 0) {
-      setShowNewConfirmModal(true);
-    } else {
-      confirmNewWorkflow();
-    }
-  }, [hasUnsavedChanges, nodes.length]);
-
   const confirmNewWorkflow = useCallback(() => {
     setNodes([]);
     setEdges([]);
@@ -655,6 +744,14 @@ function EditorInner() {
     setTerminalOpen(false);
     setShowNewConfirmModal(false);
   }, [setEdges, setNodes]);
+
+  const handleNewWorkflowClick = useCallback(() => {
+    if (hasUnsavedChanges && nodes.length > 0) {
+      setShowNewConfirmModal(true);
+    } else {
+      confirmNewWorkflow();
+    }
+  }, [confirmNewWorkflow, hasUnsavedChanges, nodes.length]);
 
   const handleSendClick = useCallback(async () => {
     if (!compiledState || isCompileDirty) {

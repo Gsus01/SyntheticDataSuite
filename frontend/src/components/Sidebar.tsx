@@ -2,29 +2,19 @@
 
 import React from "react";
 import NodeCard from "@/components/NodeCard";
-import { API_BASE } from "@/lib/api";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
+import {
+  computeConnectablePorts,
+  fetchNodeTemplates,
+  inferNodeType,
+  type CatalogNodeTemplate,
+} from "@/lib/node-templates";
 
-type ApiArtifact = { name: string; path?: string };
-type ApiNodeTemplate = {
-  name: string;
-  type: string; // preprocessing | training | generation | ...
-  parameters: string[];
-  artifacts: { inputs: ApiArtifact[]; outputs: ApiArtifact[] };
-  limits?: Record<string, unknown>;
-  version?: string;
-  parameter_defaults?: Record<string, unknown>;
-};
-
-function inferRfType(tpl: ApiNodeTemplate): NodeTypeId {
-  const inputs = tpl.artifacts?.inputs?.length ?? 0;
-  const outputs = tpl.artifacts?.outputs?.length ?? 0;
-  if (inputs === 0 && outputs > 0) return NODE_TYPES.nodeInput; // source-only
-  if (inputs > 0 && outputs === 0) return NODE_TYPES.nodeOutput; // target-only
-  return NODE_TYPES.nodeDefault; // both or none
+function inferRfType(tpl: CatalogNodeTemplate): NodeTypeId {
+  return inferNodeType(tpl);
 }
 
-function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: ApiNodeTemplate) {
+function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: CatalogNodeTemplate) {
   const rfType = inferRfType(tpl);
   event.dataTransfer.setData(DND_MIME, rfType);
   event.dataTransfer.setData("text/plain", tpl.name);
@@ -32,6 +22,7 @@ function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: ApiNode
   const parameterKeys = tpl.parameter_defaults
     ? Object.keys(tpl.parameter_defaults)
     : [];
+  const artifactPorts = computeConnectablePorts(tpl.artifacts);
   event.dataTransfer.setData(
     NODE_META_MIME,
     JSON.stringify({
@@ -39,6 +30,7 @@ function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: ApiNode
       templateName: tpl.name,
       parameterDefaults: tpl.parameter_defaults ?? null,
       parameterKeys,
+      artifactPorts,
     })
   );
   event.dataTransfer.effectAllowed = "move";
@@ -56,7 +48,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function Sidebar() {
-  const [templates, setTemplates] = React.useState<ApiNodeTemplate[] | null>(null);
+  const [templates, setTemplates] = React.useState<CatalogNodeTemplate[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
 
@@ -66,10 +58,10 @@ export default function Sidebar() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/workflow-templates`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data: ApiNodeTemplate[] = await res.json();
-        if (!cancelled) setTemplates(data);
+        const data = await fetchNodeTemplates();
+        if (!cancelled) {
+          setTemplates(data);
+        }
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Error cargando catálogo";

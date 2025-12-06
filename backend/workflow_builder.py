@@ -76,6 +76,8 @@ class FlowEdgePayload(BaseModel):
     id: Optional[str] = None
     source: str
     target: str
+    source_handle: Optional[str] = Field(None, alias="sourceHandle")
+    target_handle: Optional[str] = Field(None, alias="targetHandle")
 
 
 class WorkflowGraphPayload(BaseModel):
@@ -292,6 +294,26 @@ def _build_input_node_plan(
     return outputs
 
 
+def _match_artifact_by_handle(handle: Optional[str], outputs: Dict[str, ArtifactPlan]) -> Optional[ArtifactPlan]:
+    if not handle:
+        return None
+    handle_normalized = handle.lower()
+    for name, artifact in outputs.items():
+        if name.lower() == handle_normalized:
+            return artifact
+    return None
+
+
+def _match_input_by_handle(handle: Optional[str], inputs: List[str]) -> Optional[str]:
+    if not handle:
+        return None
+    handle_normalized = handle.lower()
+    for name in inputs:
+        if name.lower() == handle_normalized:
+            return name
+    return None
+
+
 def _assign_bindings(
     plans: Dict[str, NodePlan],
     edges: List[FlowEdgePayload],
@@ -315,7 +337,42 @@ def _assign_bindings(
         if not source_outputs or not target_inputs:
             continue
 
-        # Greedy match by name intersection first.
+        # Try to honor explicit handles first.
+        handle_source_artifact = _match_artifact_by_handle(edge.source_handle, source_plan.outputs)
+        handle_target_input = _match_input_by_handle(edge.target_handle, target_inputs)
+        if handle_target_input and handle_target_input not in bindings_per_target[target_plan.node_id]:
+            chosen_artifact = handle_source_artifact or source_plan.outputs.get(handle_target_input)
+            if not chosen_artifact and source_outputs:
+                chosen_artifact = source_outputs[0]
+            if chosen_artifact:
+                bindings_per_target[target_plan.node_id][handle_target_input] = ArtifactBinding(
+                    input_name=handle_target_input,
+                    source_node_id=source_plan.node_id,
+                    source_artifact_name=chosen_artifact.name,
+                    bucket=chosen_artifact.bucket,
+                    key=chosen_artifact.key,
+                )
+                continue
+
+        if handle_source_artifact:
+            # Map source handle by name to matching input, or next available.
+            preferred_input = _match_input_by_handle(edge.source_handle, target_inputs)
+            if not preferred_input:
+                preferred_input = next(
+                    (name for name in target_inputs if name not in bindings_per_target[target_plan.node_id]),
+                    None,
+                )
+            if preferred_input and preferred_input not in bindings_per_target[target_plan.node_id]:
+                bindings_per_target[target_plan.node_id][preferred_input] = ArtifactBinding(
+                    input_name=preferred_input,
+                    source_node_id=source_plan.node_id,
+                    source_artifact_name=handle_source_artifact.name,
+                    bucket=handle_source_artifact.bucket,
+                    key=handle_source_artifact.key,
+                )
+                continue
+
+        # Greedy match by name intersection next.
         remaining_outputs = {artifact.name: artifact for artifact in source_outputs}
         for input_name in target_inputs:
             if input_name in bindings_per_target[target_plan.node_id]:
@@ -649,4 +706,3 @@ def render_workflow_yaml(plan: WorkflowPlan) -> str:
 def suggest_workflow_filename(plan: WorkflowPlan) -> str:
     slug = sanitize_path_segment(plan.session_id[:16], "workflow")
     return f"workflow-{slug}.yaml"
-
