@@ -25,7 +25,6 @@
   "record_video": false,
   "plot": false,
   "colab": false,
-  "output_folder": "results",
 
   "pos_target": [0.0, 0.0, 1.0]
 }

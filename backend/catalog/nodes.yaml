@@ -197,8 +197,12 @@ nodes:
       outputs:
         - name: rl-metrics
           path: /data/outputs/metrics.json
-        - name: rl-results
-          path: /data/outputs/results
+        - name: rl-best-model
+          path: /data/outputs/best_model.zip
+        - name: rl-final-model
+          path: /data/outputs/final_model.zip
+        - name: rl-evaluations
+          path: /data/outputs/evaluations.npz
     limits: {}
 
   - name: bouncing-ball

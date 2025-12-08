@@ -12,6 +12,7 @@ import os
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 from pathlib import Path
+import shutil
 import time
 import json
 from datetime import datetime
@@ -30,7 +31,6 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from gym_pybullet_drones.utils.Logger import Logger
 from gym_pybullet_drones.envs.HoverAviary import HoverAviary
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
-from gym_pybullet_drones.utils.utils import sync, str2bool
 from gym_pybullet_drones.utils.enums import ObservationType, ActionType
 
 # Standard directories for containerized execution
@@ -75,7 +75,6 @@ DEFAULT_CONFIG = {
     "record_video": False,
     "plot": False,
     "colab": False,
-    "output_folder": "results",
 
     # Objetivo de hover para métricas de posición (solo single-agent + KIN)
     "pos_target": [0.0, 0.0, 1.0]
@@ -91,16 +90,6 @@ def load_config(config_path: str) -> dict:
         user_cfg = json.load(f)
     cfg.update(user_cfg)
     return cfg
-
-
-def resolve_output_folder(config_value: str, output_dir: Path) -> str:
-    """Resolve the output folder path honoring the standard output dir."""
-    if not config_value:
-        return str(output_dir)
-    cfg_path = Path(config_value).expanduser()
-    if not cfg_path.is_absolute():
-        cfg_path = output_dir / cfg_path
-    return str(cfg_path)
 
 
 def resolve_with_base(base_dir: Path, override: Optional[str], default_name: str) -> Path:
@@ -124,14 +113,21 @@ def run(config: dict, metrics_output_path: str):
 
     script_start = datetime.now()
 
+    metrics_path = Path(metrics_output_path)
+    metrics_dir = metrics_path.parent
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+
     # --------------------------
     # Preparar carpetas y run_id
     # --------------------------
     run_id = 'save-' + script_start.strftime("%m.%d.%Y_%H.%M.%S")
-    output_folder = config.get("output_folder", "results")
-    run_folder = os.path.join(output_folder, run_id)
+    run_folder = metrics_dir
 
-    os.makedirs(run_folder, exist_ok=True)
+    # Limpia restos de ejecuciones previas dentro del directorio de salida
+    for stale_name in ("best_model.zip", "final_model.zip", "evaluations.npz"):
+        stale_path = metrics_dir / stale_name
+        if stale_path.exists():
+            stale_path.unlink()
 
     # --------------------------
     # Crear entornos
@@ -203,8 +199,8 @@ def run(config: dict, metrics_output_path: str):
         eval_env,
         callback_on_new_best=callback_on_best,
         verbose=1,
-        best_model_save_path=run_folder + '/',
-        log_path=run_folder + '/',
+        best_model_save_path=str(run_folder) + '/',
+        log_path=str(run_folder) + '/',
         eval_freq=int(config["eval_freq"]),
         deterministic=True,
         render=False
@@ -227,30 +223,42 @@ def run(config: dict, metrics_output_path: str):
     timesteps_total = int(model.num_timesteps)
 
     # Guardar modelo final
-    final_model_path = os.path.join(run_folder, 'final_model.zip')
-    model.save(final_model_path)
+    final_model_path = metrics_dir / 'final_model.zip'
+    model.save(str(final_model_path))
     print("[INFO] Final model saved to", final_model_path)
 
     # --------------------------
     # Cargar mejor modelo (si existe)
     # --------------------------
-    best_model_path = os.path.join(run_folder, 'best_model.zip')
-    if os.path.isfile(best_model_path):
+    best_model_path = metrics_dir / 'best_model.zip'
+    if best_model_path.is_file():
         path_model_to_use = best_model_path
     else:
         print("[WARN] No best_model.zip found, using final_model.zip")
+        try:
+            shutil.copy(str(final_model_path), str(best_model_path))
+        except OSError as exc:
+            print(f"[WARN] Could not copy final model to best_model.zip: {exc}, saving a fresh copy instead")
+            model.save(str(best_model_path))
         path_model_to_use = final_model_path
 
-    model = PPO.load(path_model_to_use)
+    model = PPO.load(str(path_model_to_use))
     print("[INFO] Loaded model from", path_model_to_use)
 
     # --------------------------
     # Leer evaluaciones de entrenamiento
     # --------------------------
-    eval_file = os.path.join(run_folder, 'evaluations.npz')
+    eval_file = metrics_dir / 'evaluations.npz'
+    if not eval_file.exists():
+        np.savez(
+            str(eval_file),
+            timesteps=np.empty((0,), dtype=np.int64),
+            results=np.empty((0, 0), dtype=float)
+        )
+
     training_metrics = {}
-    if os.path.isfile(eval_file):
-        with np.load(eval_file) as data:
+    if eval_file.is_file():
+        with np.load(str(eval_file)) as data:
             timesteps_arr = data["timesteps"]               # shape (n_eval,)
             results_matrix = data["results"]                # shape (n_eval, n_eval_episodes)
             results_mean = np.mean(results_matrix, axis=1)  # mean reward por evaluación
@@ -333,7 +341,7 @@ def run(config: dict, metrics_output_path: str):
     logger = Logger(
         logging_freq_hz=int(test_env.CTRL_FREQ),
         num_drones=num_drones,
-        output_folder=run_folder,
+        output_folder=str(run_folder),
         colab=bool(config["colab"])
     )
 
@@ -458,7 +466,8 @@ def run(config: dict, metrics_output_path: str):
 
     config_for_json = dict(config)
     config_for_json["target_reward_resolved"] = float(target_reward) if target_reward is not None else None
-    config_for_json["run_folder"] = run_folder
+    config_for_json["run_folder"] = str(metrics_dir)
+    config_for_json["run_id"] = run_id
     config_for_json["model_file_used_for_test"] = os.path.basename(path_model_to_use)
 
     test_metrics = {
@@ -484,14 +493,12 @@ def run(config: dict, metrics_output_path: str):
     # --------------------------
     # Guardar métricas en JSON
     # --------------------------
-    metrics_dir = os.path.dirname(metrics_output_path)
-    if metrics_dir:
-        os.makedirs(metrics_dir, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(metrics_output_path, "w") as f:
+    with metrics_path.open("w") as f:
         json.dump(metrics, f, indent=2)
 
-    print("[INFO] Metrics JSON written to", metrics_output_path)
+    print("[INFO] Metrics JSON written to", metrics_path)
 
 
 if __name__ == '__main__':
@@ -529,12 +536,12 @@ if __name__ == '__main__':
     ARGS = parser.parse_args()
 
     output_dir = Path(ARGS.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     config_dir = Path(ARGS.config_dir)
     config_path = resolve_with_base(config_dir, ARGS.config, DEFAULT_CONFIG_FILE)
     metrics_output_path = resolve_with_base(output_dir, ARGS.metrics_output, DEFAULT_METRICS_FILE)
 
+    metrics_output_path.parent.mkdir(parents=True, exist_ok=True)
+
     cfg = load_config(str(config_path))
-    cfg["output_folder"] = resolve_output_folder(cfg.get("output_folder"), output_dir)
+    cfg.pop("output_folder", None)
     run(cfg, metrics_output_path=str(metrics_output_path))

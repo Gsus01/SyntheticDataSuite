@@ -235,8 +235,16 @@ templates:
           path: /data/outputs/metrics.json
           archive:
             none: {}
-        - name: rl-results
-          path: /data/outputs/results
+        - name: rl-best-model
+          path: /data/outputs/best_model.zip
+          archive:
+            none: {}
+        - name: rl-final-model
+          path: /data/outputs/final_model.zip
+          archive:
+            none: {}
+        - name: rl-evaluations
+          path: /data/outputs/evaluations.npz
           archive:
             none: {}
 

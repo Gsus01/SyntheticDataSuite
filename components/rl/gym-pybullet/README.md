@@ -20,7 +20,10 @@ docker run --rm \
 
 Artifacts produced:
 - `/data/outputs/metrics.json`: aggregated training/test metrics.
-- `/data/outputs/results/`: run folder with `best_model.zip`, logs, and SB3 artifacts.
+- `/data/outputs/best_model.zip`: best-performing checkpoint (falls back to final model if no best is found).
+- `/data/outputs/final_model.zip`: last checkpoint after training.
+- `/data/outputs/evaluations.npz`: evaluation traces recorded during training.
 
 Notes
 - The Dockerfile clones `gym-pybullet-drones` (branch `main`) and overlays the local `rl_example.py` and `variables.json` so tweaks to this component are picked up without copying the full upstream repo into the build context.
+- `output_folder` overrides in config are ignored so everything lands next to `metrics.json`.
