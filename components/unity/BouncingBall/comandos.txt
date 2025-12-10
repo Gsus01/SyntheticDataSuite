@@ -1,0 +1,19 @@
+Para hacer la Buid:
+
+docker build -t bouncing-ball .
+
+Para ejecutar el contenedor (lee un JSON de config con startHeight y gravity):
+
+cat > config.json <<'EOF'
+{
+  "startHeight": 15,
+  "gravity": -9.8
+}
+EOF
+
+# Monta el config en la ruta que usa la plantilla /tmp/config/bouncing_ball.json
+docker run --rm \
+  -v "$(pwd)/config.json:/tmp/config/bouncing_ball.json" \
+  bouncing-ball \
+  --config /tmp/config/bouncing_ball.json \
+  --output /tmp/output/bouncing_ball.json

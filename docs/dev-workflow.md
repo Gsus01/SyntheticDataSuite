@@ -3,9 +3,20 @@
 Este documento resume cómo arrancar el entorno de desarrollo local de forma rápida usando los scripts y el Makefile. La idea es minimizar pasos manuales y permitir arrancar sólo las piezas que necesites (MinIO, Argo, backend, frontend).
 
 #### Requisitos
-- minikube y kubectl instalados
-- Node 18+ y npm
-- Python 3.10+ (para backend) y `uvicorn`
+
+Antes de empezar, asegúrate de tener instalados:
+
+| Herramienta | Descripción | Instalación |
+|-------------|-------------|-------------|
+| Docker | Motor de contenedores | [Documentación oficial](https://docs.docker.com/engine/install/) |
+| minikube | Clúster Kubernetes local | [Documentación oficial](https://minikube.sigs.k8s.io/docs/start/) |
+| kubectl | CLI de Kubernetes | [Documentación oficial](https://kubernetes.io/docs/tasks/tools/) |
+| Argo CLI | Cliente de línea de comandos para Argo Workflows | [Releases en GitHub](https://github.com/argoproj/argo-workflows/releases) |
+| Node 18+ y npm | Entorno JavaScript para el frontend | [Documentación oficial](https://nodejs.org/) |
+| Python 3.10+ | Lenguaje para el backend | [Documentación oficial](https://www.python.org/downloads/) |
+| uv | Gestor de dependencias Python | [Documentación oficial](https://docs.astral.sh/uv/getting-started/installation/) |
+
+> **Nota:** Los scripts despliegan Argo Server dentro de minikube automáticamente, pero el backend necesita el binario `argo` instalado localmente para ejecutar `argo submit`.
 
 #### Comando rápido (todo)
 ```bash

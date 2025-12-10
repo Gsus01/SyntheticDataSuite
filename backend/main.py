@@ -41,6 +41,12 @@ from workflow_store import (
     StoredWorkflowRecord,
     StoredWorkflowSummary,
 )
+from image_validator import (
+    validate_images,
+    validate_all_images,
+    get_build_command_for_image,
+    ImageValidationResult,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -326,6 +332,74 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+# ---------------------------------------------------------------------------
+# Image validation endpoints
+# ---------------------------------------------------------------------------
+
+class MissingImageInfo(BaseModel):
+    image: str
+    build_command: Optional[str] = Field(None, alias="buildCommand")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ImageValidationResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    all_present: bool = Field(..., alias="allPresent")
+    missing_images: List[MissingImageInfo] = Field(default_factory=list, alias="missingImages")
+    present_images: List[str] = Field(default_factory=list, alias="presentImages")
+    error: Optional[str] = None
+
+
+class ValidateImagesPayload(BaseModel):
+    template_names: List[str] = Field(..., alias="templateNames")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+@app.post("/images/validate", response_model=ImageValidationResponse)
+def validate_workflow_images(payload: ValidateImagesPayload) -> ImageValidationResponse:
+    """Validate that Docker images for the given templates exist in minikube."""
+    result = validate_images(payload.template_names)
+    
+    missing_info = [
+        MissingImageInfo(
+            image=img,
+            buildCommand=get_build_command_for_image(img),
+        )
+        for img in result.missing_images
+    ]
+    
+    return ImageValidationResponse(
+        allPresent=result.all_present,
+        missingImages=missing_info,
+        presentImages=result.present_images,
+        error=result.error,
+    )
+
+
+@app.get("/images/validate-all", response_model=ImageValidationResponse)
+def validate_all_workflow_images() -> ImageValidationResponse:
+    """Validate all Docker images defined in workflow-templates.yaml."""
+    result = validate_all_images()
+    
+    missing_info = [
+        MissingImageInfo(
+            image=img,
+            buildCommand=get_build_command_for_image(img),
+        )
+        for img in result.missing_images
+    ]
+    
+    return ImageValidationResponse(
+        allPresent=result.all_present,
+        missingImages=missing_info,
+        presentImages=result.present_images,
+        error=result.error,
+    )
+
+
 @app.post("/workflow/render")
 def render_workflow(payload: WorkflowGraphPayload):
     try:
@@ -482,6 +556,29 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - unexpected
         raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}")
+
+    # Validate that all required Docker images exist in minikube
+    template_names = [task.template_name for task in plan.tasks()]
+    image_result = validate_images(template_names)
+    
+    if not image_result.all_present:
+        missing_details = []
+        for img in image_result.missing_images:
+            build_cmd = get_build_command_for_image(img)
+            if build_cmd:
+                missing_details.append(f"  - {img}\n    Build: {build_cmd}")
+            else:
+                missing_details.append(f"  - {img}")
+        
+        error_msg = (
+            f"Faltan imágenes Docker en minikube. El workflow fallaría con ErrImageNeverPull.\n\n"
+            f"Imágenes faltantes:\n" + "\n".join(missing_details) + "\n\n"
+            f"Para construir las imágenes, primero ejecuta:\n"
+            f"  eval $(minikube docker-env)\n\n"
+            f"Y luego construye cada imagen con los comandos indicados, o usa:\n"
+            f"  ./build_all.sh"
+        )
+        raise HTTPException(status_code=400, detail=error_msg)
 
     session_segment = sanitize_path_segment(payload.session_id, "session")
     manifest_key = f"sessions/{session_segment}/workflow/{filename}"

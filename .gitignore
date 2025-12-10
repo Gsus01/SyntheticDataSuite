@@ -5,3 +5,10 @@ node_modules
 __pycache__
 /.tmp/
 tmp
+
+# Unity debug symbols (not needed for runtime)
+*_BurstDebugInformation_DoNotShip/
+
+# Unity simulation outputs
+**/unity/**/output.json
+**/unity/**/salida.json

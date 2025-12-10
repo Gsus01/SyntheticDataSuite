@@ -1,13 +1,23 @@
 #!/bin/bash
 # build_all.sh - Construye las imágenes Docker de todos los componentes principales
 # Uso: bash build_all.sh [TAG]
-
-# Para construilas en el entorno de minikube:
-# eval $(minikube docker-env)
+#
+# Por defecto construye en el Docker de minikube. Para construir en Docker local:
+#   SKIP_MINIKUBE_ENV=1 ./build_all.sh
 
 set -e
 
 TAG=${1:-latest}
+
+# Configurar el entorno Docker de minikube (a menos que se indique lo contrario)
+if [ -z "$SKIP_MINIKUBE_ENV" ]; then
+  if command -v minikube &> /dev/null; then
+    echo "Configurando entorno Docker de minikube..."
+    eval $(minikube docker-env)
+  else
+    echo "WARN: minikube no encontrado. Usando Docker local."
+  fi
+fi
 
 # Construir imagen de preprocessing
 echo "Construyendo imagen: preprocessing:${TAG}"
@@ -28,6 +38,25 @@ for dir in components/training/*/; do
     name=$(basename "$dir")
     echo "Construyendo imagen: training-$name:${TAG}"
     docker build -t training-$name:${TAG} "$dir"
+  fi
+done
+
+# Construir imágenes de RL
+for dir in components/rl/*/; do
+  if [ -f "$dir/Dockerfile" ]; then
+    name=$(basename "$dir")
+    echo "Construyendo imagen: rl-$name:${TAG}"
+    docker build -t rl-$name:${TAG} "$dir"
+  fi
+done
+
+# Construir imágenes de Unity/simulaciones
+for dir in components/unity/*/; do
+  if [ -f "$dir/Dockerfile" ]; then
+    name=$(basename "$dir")
+    image_name=$(echo "$name" | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
+    echo "Construyendo imagen: ${image_name}:${TAG}"
+    docker build -t ${image_name}:${TAG} "$dir"
   fi
 done
 
