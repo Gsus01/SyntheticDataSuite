@@ -78,7 +78,7 @@ export default function Sidebar() {
   }, []);
 
   const byType = React.useMemo(() => {
-    const groups: Record<string, ApiNodeTemplate[]> = {
+    const groups: Record<string, CatalogNodeTemplate[]> = {
       input: [],
       output: [],
       preprocessing: [],

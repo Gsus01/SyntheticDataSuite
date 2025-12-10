@@ -4,10 +4,21 @@
 #
 # Por defecto construye en el Docker de minikube. Para construir en Docker local:
 #   SKIP_MINIKUBE_ENV=1 ./build_all.sh
+#
+# Variables de entorno opcionales:
+#   SKIP_MINIKUBE_ENV=1     - No configurar Docker de minikube
+#   SKIP_COMPONENTS=1       - No construir componentes ML (solo backend/frontend)
+#   BACKEND_URL=...         - URL del backend para el frontend
+#
+# BACKEND_URL options:
+#   /api                    - Para uso con Ingress (default, recomendado)
+#   http://localhost:8000   - Para desarrollo local sin Ingress (port-forward)
 
 set -e
 
 TAG=${1:-latest}
+# Default: /api for Ingress routing (frontend and backend behind same domain)
+BACKEND_URL=${BACKEND_URL:-"/api"}
 
 # Configurar el entorno Docker de minikube (a menos que se indique lo contrario)
 if [ -z "$SKIP_MINIKUBE_ENV" ]; then
@@ -18,6 +29,43 @@ if [ -z "$SKIP_MINIKUBE_ENV" ]; then
     echo "WARN: minikube no encontrado. Usando Docker local."
   fi
 fi
+
+# =============================================================================
+# Backend y Frontend
+# =============================================================================
+
+echo ""
+echo "=========================================="
+echo "Construyendo Backend y Frontend"
+echo "=========================================="
+
+# Construir backend
+echo "Construyendo imagen: syntheticdata-backend:${TAG}"
+docker build -t syntheticdata-backend:${TAG} backend/
+
+# Construir frontend con la URL del backend
+echo "Construyendo imagen: syntheticdata-frontend:${TAG}"
+echo "  NEXT_PUBLIC_API_BASE_URL=${BACKEND_URL}"
+docker build -t syntheticdata-frontend:${TAG} \
+  --build-arg NEXT_PUBLIC_API_BASE_URL="${BACKEND_URL}" \
+  frontend/
+
+# =============================================================================
+# Componentes ML (opcional)
+# =============================================================================
+
+if [ -n "$SKIP_COMPONENTS" ]; then
+  echo ""
+  echo "SKIP_COMPONENTS=1 - Saltando construcción de componentes ML"
+  echo ""
+  echo "Backend y Frontend construidos con tag: ${TAG}"
+  exit 0
+fi
+
+echo ""
+echo "=========================================="
+echo "Construyendo Componentes ML"
+echo "=========================================="
 
 # Construir imagen de preprocessing
 echo "Construyendo imagen: preprocessing:${TAG}"
@@ -60,4 +108,8 @@ for dir in components/unity/*/; do
   fi
 done
 
-echo "\nTodas las imágenes han sido construidas con el tag: ${TAG}"
+echo ""
+echo "=========================================="
+echo "Todas las imágenes construidas con tag: ${TAG}"
+echo "=========================================="
+

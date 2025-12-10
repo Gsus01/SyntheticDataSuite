@@ -24,7 +24,7 @@ import {
   fetchNodeTemplates,
   type CatalogNodeTemplate,
 } from "@/lib/node-templates";
-import type { FlowNodeData, FlowNodePorts, WorkflowNodeRuntimeStatus } from "@/types/flow";
+import type { FlowNodeData, FlowNodePorts, NodeArtifactPort, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import {
   submitWorkflow,
   fetchWorkflowStatus,
@@ -82,9 +82,9 @@ function normalizePortsFromMeta(payload: unknown): FlowNodePorts | undefined {
         return {
           name,
           path: typeof path === "string" || path === null ? path : undefined,
-        };
+        } as NodeArtifactPort;
       })
-      .filter((item): item is { name: string; path?: string | null } => Boolean(item));
+      .filter((item): item is NodeArtifactPort => Boolean(item));
   };
 
   const inputs = normalizeList(raw.inputs);
@@ -99,7 +99,8 @@ function generateSessionId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  return `sess_${Math.random().toString(36).slice(2, 10)}`;
+  // Fallback: use hyphen instead of underscore (Kubernetes RFC 1123 compliant)
+  return `sess-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 type CompiledWorkflowState = {
@@ -495,9 +496,9 @@ function EditorInner() {
         prev.map((node) =>
           node.id === nodeId
             ? {
-                ...node,
-                data: updater(node.data),
-              }
+              ...node,
+              data: updater(node.data),
+            }
             : node
         )
       );
@@ -559,12 +560,12 @@ function EditorInner() {
       const compiledInfo =
         record.compiledManifest && record.manifestFilename
           ? {
-              manifest: record.compiledManifest,
-              manifestFilename: record.manifestFilename,
-              nodeSlugMap: record.nodeSlugMap ?? {},
-              bucket: record.lastBucket ?? undefined,
-              compiledAt: record.compiledAt ?? record.updatedAt,
-            }
+            manifest: record.compiledManifest,
+            manifestFilename: record.manifestFilename,
+            nodeSlugMap: record.nodeSlugMap ?? {},
+            bucket: record.lastBucket ?? undefined,
+            compiledAt: record.compiledAt ?? record.updatedAt,
+          }
           : null;
       setCompiledState(compiledInfo);
       setIsCompileDirty(!compiledInfo);
@@ -775,24 +776,24 @@ function EditorInner() {
       setCompiledState((prev) =>
         prev
           ? {
-              ...prev,
-              nodeSlugMap: result.nodeSlugMap,
-            }
+            ...prev,
+            nodeSlugMap: result.nodeSlugMap,
+          }
           : prev
       );
       setActiveWorkflow((prev) =>
         prev
           ? {
-              ...prev,
-              lastWorkflowName: result.workflowName,
-              lastNamespace: result.namespace,
-              lastSubmittedAt: new Date().toISOString(),
-              lastBucket: result.bucket,
-              lastKey: result.key,
-              lastManifestFilename: result.manifestFilename,
-              lastCliOutput: result.cliOutput ?? null,
-              nodeSlugMap: result.nodeSlugMap,
-            }
+            ...prev,
+            lastWorkflowName: result.workflowName,
+            lastNamespace: result.namespace,
+            lastSubmittedAt: new Date().toISOString(),
+            lastBucket: result.bucket,
+            lastKey: result.key,
+            lastManifestFilename: result.manifestFilename,
+            lastCliOutput: result.cliOutput ?? null,
+            nodeSlugMap: result.nodeSlugMap,
+          }
           : prev
       );
     } catch (error) {
@@ -965,11 +966,10 @@ function EditorInner() {
                   </span>
                 )}
                 <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset whitespace-nowrap ${
-                    isReadyToSend
-                      ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                      : "bg-slate-50 text-slate-600 ring-slate-500/10"
-                  }`}
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset whitespace-nowrap ${isReadyToSend
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+                    : "bg-slate-50 text-slate-600 ring-slate-500/10"
+                    }`}
                 >
                   {isReadyToSend
                     ? "● Compilado"

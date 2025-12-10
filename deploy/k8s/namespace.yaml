@@ -1,0 +1,10 @@
+# =============================================================================
+# Namespace for SyntheticDataSuite components
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: syntheticdata
+  labels:
+    app.kubernetes.io/name: syntheticdata
+    app.kubernetes.io/part-of: synthetic-data-suite
