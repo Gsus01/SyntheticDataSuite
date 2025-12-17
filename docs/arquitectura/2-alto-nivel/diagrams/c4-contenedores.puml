@@ -1,0 +1,30 @@
+@startuml c4_containers
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Workflow Execution Platform - Container Diagram (C4 Level 2)
+
+Person(researcher, "Researcher / Developer", "Designs visual workflows, uploads datasets, executes and monitors pipelines")
+
+System_Boundary(platform, "Workflow Execution Platform") {
+    Container(frontend, "Frontend SPA", "Next.js 15, React 19, React Flow", "Visual workflow editor with drag-and-drop interface. Real-time execution monitoring and log viewing")
+    Container(backend, "Backend API", "FastAPI, Python", "REST API for workflow management. Translates visual graphs to Argo manifests. Handles artifact uploads and workflow persistence")
+}
+
+System_Ext(minio, "MinIO / S3 Storage", "S3-compatible object storage for artifacts and workflow definitions (JSON)")
+System_Ext(argo, "Argo Workflows", "Kubernetes-native workflow orchestration engine")
+System_Ext(kubernetes, "Kubernetes Cluster", "Container orchestration platform")
+System_Ext(registry, "Container Registry", "Docker image storage for workflow step containers")
+
+Rel(researcher, frontend, "Designs workflows, monitors execution", "HTTPS")
+Rel(frontend, backend, "Submits workflows, queries status", "REST/JSON")
+
+Rel(backend, minio, "Stores/retrieves artifacts and workflow definitions", "S3 API")
+Rel(backend, argo, "Submits workflows via CLI, queries status/logs", "CLI + REST API")
+
+Rel_D(argo, kubernetes, "Creates and manages pods", "K8s API")
+Rel_L(argo, minio, "Reads/writes artifacts between steps", "S3 API")
+Rel_R(kubernetes, registry, "Pulls container images", "Docker Registry API")
+
+@enduml

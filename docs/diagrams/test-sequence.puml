@@ -1,0 +1,49 @@
+@startuml test_sequence
+' Diagrama de secuencia para probar PlantUML
+title Secuencia de Ejecución de un Flujo
+
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+actor Usuario as user
+participant "Frontend\n(React)" as fe
+participant "API\n(Backend)" as api
+participant "Argo Workflows" as argo
+database "MinIO" as minio
+
+user -> fe : Diseña flujo visual
+activate fe
+
+fe -> fe : Valida grafo (DAG)
+fe -> api : POST /workflows (JSON del flujo)
+activate api
+
+api -> api : Traduce a Workflow YAML
+api -> argo : Crea Workflow
+activate argo
+
+argo --> api : workflowId
+api --> fe : 201 Created + workflowId
+deactivate api
+
+fe --> user : Flujo enviado ✓
+deactivate fe
+
+... Ejecución asíncrona ...
+
+argo -> argo : Ejecuta nodos secuencialmente
+argo -> minio : Guarda resultados intermedios
+argo --> minio : Guarda resultado final
+deactivate argo
+
+user -> fe : Consulta estado
+activate fe
+fe -> api : GET /workflows/{id}/status
+activate api
+api -> argo : Obtiene estado
+api --> fe : Estado + resultados
+deactivate api
+fe --> user : Muestra progreso/resultados
+deactivate fe
+
+@enduml

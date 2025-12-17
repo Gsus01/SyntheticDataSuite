@@ -5,6 +5,7 @@ node_modules
 __pycache__
 /.tmp/
 tmp
+lib
 
 # Unity debug symbols (not needed for runtime)
 *_BurstDebugInformation_DoNotShip/

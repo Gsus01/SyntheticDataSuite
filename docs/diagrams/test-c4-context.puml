@@ -1,0 +1,24 @@
+@startuml test_c4_context
+' Diagrama C4 de Contexto (Nivel 1) para probar C4-PlantUML
+' Usando include remoto compatible con PlantUMLServer
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Diagrama de Contexto C4 - Sistema de Ejemplo
+
+Person(usuario, "Usuario Investigador", "Diseña y ejecuta flujos de trabajo para generación de datos sintéticos")
+Person(admin, "Administrador", "Gestiona la plataforma y los recursos del cluster")
+
+System(plataforma, "Plataforma de Datos Sintéticos", "Permite diseñar, ejecutar y monitorizar flujos de trabajo para la generación de datos sintéticos")
+
+System_Ext(storage, "Almacenamiento Externo", "Sistema de almacenamiento de objetos (S3, MinIO)")
+System_Ext(ml_models, "Modelos ML", "Repositorio de modelos de Machine Learning preentrenados")
+
+Rel(usuario, plataforma, "Diseña flujos, ejecuta experimentos", "HTTPS")
+Rel(admin, plataforma, "Administra y monitoriza", "HTTPS")
+
+Rel(plataforma, storage, "Almacena datasets y resultados", "S3 API")
+Rel(plataforma, ml_models, "Descarga modelos", "HTTPS")
+
+SHOW_LEGEND()
+
+@enduml
