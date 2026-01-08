@@ -1,0 +1,85 @@
+# =============================================================================
+# Backend ServiceAccount and RBAC
+# =============================================================================
+# The backend needs permissions to:
+# 1. Submit Argo workflows (create Workflow resources)
+# 2. Get workflow status
+# 3. Access in-cluster Kubernetes config
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: syntheticdata-backend
+  namespace: syntheticdata
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: synthetic-data-suite
+
+---
+# =============================================================================
+# ClusterRole for Argo Workflow operations
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: syntheticdata-argo-submitter
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: synthetic-data-suite
+rules:
+  # Argo Workflows - submit and manage workflows
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows", "workflowtemplates", "cronworkflows"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  
+  # Pods - needed to read logs and status
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  
+  # Events - for debugging workflow issues
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+---
+# =============================================================================
+# ClusterRoleBinding - Link ServiceAccount to ClusterRole
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: syntheticdata-backend-argo
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: synthetic-data-suite
+subjects:
+  - kind: ServiceAccount
+    name: syntheticdata-backend
+    namespace: syntheticdata
+roleRef:
+  kind: ClusterRole
+  name: syntheticdata-argo-submitter
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# =============================================================================
+# RoleBinding in argo namespace (for submitting workflows there)
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: syntheticdata-backend-argo-ns
+  namespace: argo
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: synthetic-data-suite
+subjects:
+  - kind: ServiceAccount
+    name: syntheticdata-backend
+    namespace: syntheticdata
+roleRef:
+  kind: ClusterRole
+  name: syntheticdata-argo-submitter
+  apiGroup: rbac.authorization.k8s.io

@@ -1,6 +1,6 @@
 import type { Edge, Node } from "reactflow";
 import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, buildApiUrl } from "@/lib/api";
 
 export type SubmitWorkflowRequest = {
   sessionId: string;
@@ -113,11 +113,22 @@ export type WorkflowSaveRequest = {
 };
 
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
-  return nodes.map(({ id, type, data }) => ({ id, type, data }));
+  return nodes.map(({ id, type, data }) => {
+    const { runtimeStatus, artifactPorts, ...rest } = data;
+    void runtimeStatus;
+    void artifactPorts;
+    return { id, type, data: rest };
+  });
 }
 
 function serializeEdges(edges: Edge[]) {
-  return edges.map(({ id, source, target }) => ({ id, source, target }));
+  return edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
+    id,
+    source,
+    target,
+    ...(sourceHandle ? { sourceHandle } : {}),
+    ...(targetHandle ? { targetHandle } : {}),
+  }));
 }
 
 export async function compileWorkflow(
@@ -174,7 +185,7 @@ export async function getOutputArtifacts(
   request: SubmitWorkflowRequest,
   nodeId: string
 ): Promise<OutputArtifactInfo[]> {
-  const url = new URL(`${API_BASE}/workflow/output-artifacts`);
+  const url = buildApiUrl("/workflow/output-artifacts");
   url.searchParams.set("nodeId", nodeId);
 
   const response = await fetch(url.toString(), {
@@ -204,7 +215,7 @@ export async function previewArtifact(
   key: string,
   maxBytes = 65536
 ): Promise<ArtifactPreviewResult> {
-  const url = new URL(`${API_BASE}/artifacts/preview`);
+  const url = buildApiUrl("/artifacts/preview");
   url.searchParams.set("bucket", bucket);
   url.searchParams.set("key", key);
   url.searchParams.set("maxBytes", String(maxBytes));
@@ -230,7 +241,7 @@ export async function fetchWorkflowLogs(
     follow: request.follow,
   });
 
-  const url = new URL(`${API_BASE}/workflow/logs/stream`);
+  const url = buildApiUrl("/workflow/logs/stream");
   url.searchParams.set("workflowName", request.workflowName);
   if (request.namespace) {
     url.searchParams.set("namespace", request.namespace);
@@ -263,7 +274,7 @@ export async function fetchWorkflowLogs(
 export async function fetchWorkflowStatus(
   request: WorkflowStatusRequest
 ): Promise<WorkflowStatusResponse | null> {
-  const url = new URL(`${API_BASE}/workflow/status`);
+  const url = buildApiUrl("/workflow/status");
   url.searchParams.set("workflowName", request.workflowName);
   if (request.namespace) {
     url.searchParams.set("namespace", request.namespace);

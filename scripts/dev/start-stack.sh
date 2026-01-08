@@ -73,6 +73,9 @@ fi
 
 if [[ "$DO_FRONTEND" -eq 1 ]]; then
   info "Arrancando frontend (http://localhost:3000)..."
+  # En desarrollo local, el frontend debe conectar directamente al backend local
+  # (no a través de Ingress que usa /api)
+  export NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
   npm --prefix "$ROOT_DIR/frontend" run dev &
   PIDS+=($!)
 fi

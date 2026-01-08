@@ -1,0 +1,74 @@
+# =============================================================================
+# Ingress - Single entry point for frontend and backend
+# =============================================================================
+# Routes:
+#   - syntheticdata.local/        → frontend (Next.js)
+#   - syntheticdata.local/api/*   → backend (FastAPI)
+#
+# Prerequisites:
+#   minikube addons enable ingress
+#
+# After applying, add to /etc/hosts:
+#   echo "$(minikube ip) syntheticdata.local" | sudo tee -a /etc/hosts
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Backend Ingress - handles /api/* with URL rewriting
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: syntheticdata-backend
+  namespace: syntheticdata
+  labels:
+    app.kubernetes.io/name: ingress-backend
+    app.kubernetes.io/part-of: synthetic-data-suite
+  annotations:
+    # Rewrite /api/... to /... when forwarding to backend
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Increase body size for file uploads
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    # Timeouts for long-running requests
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: syntheticdata.local
+      http:
+        paths:
+          # Backend API: /api/* → backend:8000/*
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: syntheticdata-backend
+                port:
+                  number: 8000
+
+---
+# -----------------------------------------------------------------------------
+# Frontend Ingress - handles everything else (no rewriting)
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: syntheticdata-frontend
+  namespace: syntheticdata
+  labels:
+    app.kubernetes.io/name: ingress-frontend
+    app.kubernetes.io/part-of: synthetic-data-suite
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: syntheticdata.local
+      http:
+        paths:
+          # Frontend: everything else → frontend:3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: syntheticdata-frontend
+                port:
+                  number: 3000

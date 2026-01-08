@@ -18,7 +18,13 @@ import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNod
 import NodeInspector from "@/components/NodeInspector";
 import WorkflowTerminal from "@/components/WorkflowTerminal";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
-import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
+import {
+  buildTemplateIndex,
+  computeConnectablePorts,
+  fetchNodeTemplates,
+  type CatalogNodeTemplate,
+} from "@/lib/node-templates";
+import type { FlowNodeData, FlowNodePorts, NodeArtifactPort, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import {
   submitWorkflow,
   fetchWorkflowStatus,
@@ -59,13 +65,42 @@ type DragMetaPayload = {
   templateName?: unknown;
   parameterKeys?: unknown;
   parameterDefaults?: unknown;
+  artifactPorts?: unknown;
 };
+
+function normalizePortsFromMeta(payload: unknown): FlowNodePorts | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const raw = payload as Partial<FlowNodePorts>;
+  const normalizeList = (value: unknown): FlowNodePorts["inputs"] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const name = (item as { name?: unknown }).name;
+        if (typeof name !== "string") return null;
+        const path = (item as { path?: unknown }).path;
+        return {
+          name,
+          path: typeof path === "string" || path === null ? path : undefined,
+        } as NodeArtifactPort;
+      })
+      .filter((item): item is NodeArtifactPort => Boolean(item));
+  };
+
+  const inputs = normalizeList(raw.inputs);
+  const outputs = normalizeList(raw.outputs);
+  if (!inputs.length && !outputs.length) {
+    return { inputs: [], outputs: [] };
+  }
+  return { inputs, outputs };
+}
 
 function generateSessionId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  return `sess_${Math.random().toString(36).slice(2, 10)}`;
+  // Fallback: use hyphen instead of underscore (Kubernetes RFC 1123 compliant)
+  return `sess-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 type CompiledWorkflowState = {
@@ -129,6 +164,7 @@ function EditorInner() {
   const [isCompileDirty, setIsCompileDirty] = React.useState(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(true);
   const [activeWorkflow, setActiveWorkflow] = React.useState<WorkflowRecord | null>(null);
+  const [showNewConfirmModal, setShowNewConfirmModal] = React.useState(false);
   const [showSaveModal, setShowSaveModal] = React.useState(false);
   const [showLoadModal, setShowLoadModal] = React.useState(false);
   const [saveForm, setSaveForm] = React.useState<SaveFormState>({ name: "", description: "" });
@@ -140,6 +176,7 @@ function EditorInner() {
   const [summariesLoading, setSummariesLoading] = React.useState(false);
   const [summariesError, setSummariesError] = React.useState<string | null>(null);
   const [loadingWorkflowId, setLoadingWorkflowId] = React.useState<string | null>(null);
+  const [templateIndex, setTemplateIndex] = React.useState<Record<string, CatalogNodeTemplate>>({});
   const statusPollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusAbortRef = React.useRef(false);
   const isReadyToSend = Boolean(compiledState && !isCompileDirty);
@@ -229,6 +266,53 @@ function EditorInner() {
   React.useEffect(() => {
     ensureInitialRuntimeStatus();
   }, [ensureInitialRuntimeStatus]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadTemplates = async () => {
+      try {
+        const templates = await fetchNodeTemplates();
+        if (!cancelled) {
+          setTemplateIndex(buildTemplateIndex(templates));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("No se pudo cargar el catálogo para pintar puertos:", error);
+        }
+      }
+    };
+    void loadTemplates();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!Object.keys(templateIndex).length) {
+      return;
+    }
+    setNodes((prev) => {
+      let changed = false;
+      const next = prev.map((node) => {
+        if (node.data.artifactPorts || !node.data.templateName) {
+          return node;
+        }
+        const template = templateIndex[node.data.templateName];
+        if (!template) {
+          return node;
+        }
+        changed = true;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            artifactPorts: computeConnectablePorts(template.artifacts),
+          },
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [setNodes, templateIndex]);
 
   const isSameRuntimeStatus = React.useCallback(
     (a?: WorkflowNodeRuntimeStatus, b?: WorkflowNodeRuntimeStatus) => {
@@ -364,6 +448,12 @@ function EditorInner() {
         meta?.parameterDefaults && typeof meta.parameterDefaults === "object"
           ? (meta.parameterDefaults as Record<string, unknown>)
           : undefined;
+      const metaPorts = normalizePortsFromMeta(meta?.artifactPorts);
+      const templatePorts =
+        !metaPorts && templateName && templateIndex[templateName]
+          ? computeConnectablePorts(templateIndex[templateName].artifacts)
+          : undefined;
+      const artifactPorts = metaPorts ?? templatePorts;
 
       const newNodeId = getId();
       const newNode: Node<FlowNodeData> = {
@@ -376,6 +466,7 @@ function EditorInner() {
           ...(templateName ? { templateName } : {}),
           ...(parameterKeys ? { parameterKeys } : {}),
           ...(parameterDefaults ? { parameterDefaults } : {}),
+          ...(artifactPorts ? { artifactPorts } : {}),
           ...(type === NODE_TYPES.nodeDefault
             ? { runtimeStatus: createPendingStatus(newNodeId) }
             : {}),
@@ -385,7 +476,7 @@ function EditorInner() {
       setNodes((nds) => nds.concat(newNode));
       markDirty("all");
     },
-    [markDirty, project, setNodes]
+    [markDirty, project, setNodes, templateIndex]
   );
 
   const handleSelectionChange = useCallback(
@@ -405,9 +496,9 @@ function EditorInner() {
         prev.map((node) =>
           node.id === nodeId
             ? {
-                ...node,
-                data: updater(node.data),
-              }
+              ...node,
+              data: updater(node.data),
+            }
             : node
         )
       );
@@ -445,12 +536,20 @@ function EditorInner() {
     (record: WorkflowRecord) => {
       cancelStatusPolling();
       const safeNodes =
-        record.nodes?.map((node) => ({
-          ...node,
-          data: {
-            ...node.data,
-          },
-        })) ?? [];
+        record.nodes?.map((node) => {
+          const ports =
+            node.data.artifactPorts ||
+            (node.data.templateName && templateIndex[node.data.templateName]
+              ? computeConnectablePorts(templateIndex[node.data.templateName].artifacts)
+              : undefined);
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              ...(ports ? { artifactPorts: ports } : {}),
+            },
+          };
+        }) ?? [];
       const safeEdges = record.edges?.map((edge) => ({ ...edge })) ?? [];
       setNodes(safeNodes);
       setEdges(safeEdges);
@@ -461,12 +560,12 @@ function EditorInner() {
       const compiledInfo =
         record.compiledManifest && record.manifestFilename
           ? {
-              manifest: record.compiledManifest,
-              manifestFilename: record.manifestFilename,
-              nodeSlugMap: record.nodeSlugMap ?? {},
-              bucket: record.lastBucket ?? undefined,
-              compiledAt: record.compiledAt ?? record.updatedAt,
-            }
+            manifest: record.compiledManifest,
+            manifestFilename: record.manifestFilename,
+            nodeSlugMap: record.nodeSlugMap ?? {},
+            bucket: record.lastBucket ?? undefined,
+            compiledAt: record.compiledAt ?? record.updatedAt,
+          }
           : null;
       setCompiledState(compiledInfo);
       setIsCompileDirty(!compiledInfo);
@@ -487,7 +586,7 @@ function EditorInner() {
       }
       ensureInitialRuntimeStatus();
     },
-    [cancelStatusPolling, ensureInitialRuntimeStatus, setEdges, setNodes]
+    [cancelStatusPolling, ensureInitialRuntimeStatus, setEdges, setNodes, templateIndex]
   );
 
   const openSaveModal = useCallback(() => {
@@ -632,6 +731,29 @@ function EditorInner() {
     [applyWorkflowRecord]
   );
 
+  const confirmNewWorkflow = useCallback(() => {
+    setNodes([]);
+    setEdges([]);
+    setSessionId(generateSessionId());
+    setSelectedNodeId(null);
+    setActiveWorkflow(null);
+    setCompiledState(null);
+    setIsCompileDirty(true);
+    setHasUnsavedChanges(false);
+    setSubmitResult(null);
+    setSubmitError(null);
+    setTerminalOpen(false);
+    setShowNewConfirmModal(false);
+  }, [setEdges, setNodes]);
+
+  const handleNewWorkflowClick = useCallback(() => {
+    if (hasUnsavedChanges && nodes.length > 0) {
+      setShowNewConfirmModal(true);
+    } else {
+      confirmNewWorkflow();
+    }
+  }, [confirmNewWorkflow, hasUnsavedChanges, nodes.length]);
+
   const handleSendClick = useCallback(async () => {
     if (!compiledState || isCompileDirty) {
       setSubmitError("Compila el workflow antes de enviarlo.");
@@ -654,24 +776,24 @@ function EditorInner() {
       setCompiledState((prev) =>
         prev
           ? {
-              ...prev,
-              nodeSlugMap: result.nodeSlugMap,
-            }
+            ...prev,
+            nodeSlugMap: result.nodeSlugMap,
+          }
           : prev
       );
       setActiveWorkflow((prev) =>
         prev
           ? {
-              ...prev,
-              lastWorkflowName: result.workflowName,
-              lastNamespace: result.namespace,
-              lastSubmittedAt: new Date().toISOString(),
-              lastBucket: result.bucket,
-              lastKey: result.key,
-              lastManifestFilename: result.manifestFilename,
-              lastCliOutput: result.cliOutput ?? null,
-              nodeSlugMap: result.nodeSlugMap,
-            }
+            ...prev,
+            lastWorkflowName: result.workflowName,
+            lastNamespace: result.namespace,
+            lastSubmittedAt: new Date().toISOString(),
+            lastBucket: result.bucket,
+            lastKey: result.key,
+            lastManifestFilename: result.manifestFilename,
+            lastCliOutput: result.cliOutput ?? null,
+            nodeSlugMap: result.nodeSlugMap,
+          }
           : prev
       );
     } catch (error) {
@@ -788,97 +910,121 @@ function EditorInner() {
   }, [applyWorkflowStatus, cancelStatusPolling, submitResult]);
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex h-screen w-full bg-gray-50">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center justify-between gap-4 border-b border-indigo-100/80 bg-gradient-to-r from-white via-indigo-50/50 to-white px-5 py-3 shadow-sm">
-          <div className="flex flex-1 items-center gap-4">
-            <div className="rounded-lg border border-white/80 bg-white/70 px-3 py-2 shadow-inner">
-              <p className="text-sm font-semibold text-gray-900">
-                {activeWorkflow?.name || "Workflow sin guardar"}
-              </p>
-              <p className="text-xs text-gray-500">
-                {activeWorkflow ? `Actualizado ${formatDateLabel(activeWorkflow.updatedAt)}` : "Sin guardar"}
-              </p>
+        {/* Modern Header */}
+        <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm z-10">
+          {/* Left: Workflow Info & File Actions */}
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col">
+              <h1 className="text-sm font-bold text-gray-900 leading-tight">
+                {activeWorkflow?.name || "Sin Título"}
+              </h1>
+              <span className="text-[11px] font-medium text-gray-400">
+                {activeWorkflow
+                  ? `Editado ${formatDateLabel(activeWorkflow.updatedAt)}`
+                  : "Borrador local"}
+              </span>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="h-6 w-px bg-gray-200" aria-hidden="true" />
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleNewWorkflowClick}
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              >
+                Nuevo
+              </button>
               <button
                 type="button"
                 onClick={openLoadModal}
-                className="inline-flex items-center rounded-full border border-gray-200/80 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 Cargar
               </button>
               <button
                 type="button"
                 onClick={openSaveModal}
-                className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-700 shadow-sm transition hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 Guardar
               </button>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {hasUnsavedChanges && (
-                <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
-                  Cambios sin guardar
+
+          {/* Right: Status & Execution Actions */}
+          <div className="flex items-center gap-4">
+            {/* Status Indicators */}
+            <div className="flex flex-col items-end justify-center space-y-0.5 mr-2 w-48 text-right relative">
+              <div className="flex items-center justify-end gap-2 absolute right-0 bottom-0 transform translate-y-1/2 transition-all duration-300">
+                {hasUnsavedChanges && (
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 whitespace-nowrap">
+                    ● Sin guardar
+                  </span>
+                )}
+                <span
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset whitespace-nowrap ${isReadyToSend
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+                    : "bg-slate-50 text-slate-600 ring-slate-500/10"
+                    }`}
+                >
+                  {isReadyToSend
+                    ? "● Compilado"
+                    : "Pendiente compilar"}
+                </span>
+              </div>
+              {showUnsyncedHint && (
+                <span className="text-[10px] text-amber-600 font-medium animate-pulse absolute right-0 -top-4 whitespace-nowrap">
+                  Cambios detectados: Recompila antes de enviar
                 </span>
               )}
-              <span
-                className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                  isReadyToSend ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                }`}
-              >
-                {isReadyToSend
-                  ? `Compilado ${formatDateLabel(compiledState?.compiledAt)}`
-                  : "Compilación pendiente"}
-              </span>
-              {compiling && (
-                <span className="text-xs font-medium uppercase tracking-wide text-indigo-500">
-                  Compilando…
-                </span>
-              )}
-              {submitting && (
-                <span className="text-xs font-medium uppercase tracking-wide text-indigo-600">
-                  Enviando workflow…
-                </span>
-              )}
+            </div>
+
+            {/* Execution Buttons */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleCompileClick}
                 disabled={compiling}
-                className="rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+                className="cursor-pointer inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
-                {compiling ? "Compilando…" : "Compilar Workflow"}
-              </button>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={handleSendClick}
-                  disabled={!isReadyToSend || submitting}
-                  className="rounded bg-indigo-600 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {submitting ? "Enviando…" : "Enviar Workflow"}
-                </button>
-                {showUnsyncedHint && (
-                  <span
-                    className="absolute -right-1.5 -top-1.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white ring-2 ring-white"
-                    title="Hay cambios sin compilar desde la última compilación."
-                  >
-                    !
-                  </span>
+                {compiling ? (
+                  <>
+                    <svg className="mr-2 h-3 w-3 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Compilando
+                  </>
+                ) : (
+                  "Compilar"
                 )}
-              </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendClick}
+                disabled={!isReadyToSend || submitting}
+                className="cursor-pointer inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all"
+              >
+                {submitting ? (
+                  <>
+                    <svg className="mr-2 h-3 w-3 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Enviando...
+                  </>
+                ) : (
+                  "Ejecutar Workflow"
+                )}
+              </button>
             </div>
-            {showUnsyncedHint && (
-              <p className="flex items-center gap-1 text-[11px] font-medium text-amber-600">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                Cambios sin compilar; recompila antes de enviar.
-              </p>
-            )}
           </div>
-        </div>
+        </header>
         {compileError && (
           <div className="border-l-4 border-rose-400 bg-rose-50 px-5 py-2 text-sm text-rose-700">
             {compileError}
@@ -934,6 +1080,32 @@ function EditorInner() {
           submitError={submitError}
         />
       </div>
+      {showNewConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl ring-1 ring-gray-900/5 transform transition-all">
+            <h3 className="text-lg font-semibold text-gray-900">¿Crear nuevo workflow?</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              Tienes cambios sin guardar. Si continúas, perderás el trabajo actual no guardado.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowNewConfirmModal(false)}
+                className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmNewWorkflow}
+                className="cursor-pointer rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
+              >
+                Descartar y Crear Nuevo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showSaveModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
@@ -946,7 +1118,7 @@ function EditorInner() {
               </div>
               <button
                 type="button"
-                className="text-gray-500 transition hover:text-gray-700"
+                className="cursor-pointer text-gray-500 transition hover:text-gray-700"
                 onClick={closeSaveModal}
                 disabled={saving}
               >
@@ -984,7 +1156,7 @@ function EditorInner() {
                 type="button"
                 onClick={closeSaveModal}
                 disabled={saving}
-                className="rounded border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                className="cursor-pointer rounded border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
               >
                 Cancelar
               </button>
@@ -992,7 +1164,7 @@ function EditorInner() {
                 type="button"
                 onClick={handleSaveWorkflow}
                 disabled={saving}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 disabled:opacity-70"
+                className="cursor-pointer rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 disabled:opacity-70"
               >
                 {saving ? "Guardando…" : "Guardar"}
               </button>
@@ -1014,14 +1186,14 @@ function EditorInner() {
                 <button
                   type="button"
                   onClick={() => refreshWorkflowSummaries()}
-                  className="rounded border border-gray-300 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                  className="cursor-pointer rounded border border-gray-300 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
                 >
                   Actualizar
                 </button>
                 <button
                   type="button"
                   onClick={closeLoadModal}
-                  className="text-gray-500 transition hover:text-gray-700"
+                  className="cursor-pointer text-gray-500 transition hover:text-gray-700"
                 >
                   ✕
                 </button>
@@ -1044,7 +1216,7 @@ function EditorInner() {
                     type="button"
                     onClick={() => handleLoadWorkflow(summary.workflowId)}
                     disabled={loadingWorkflowId === summary.workflowId}
-                    className="flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="cursor-pointer flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     <div>
                       <p className="text-sm font-semibold text-gray-900">{summary.name}</p>

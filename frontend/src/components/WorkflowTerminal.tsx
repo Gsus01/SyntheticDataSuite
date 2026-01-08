@@ -641,7 +641,7 @@ export default function WorkflowTerminal({
           <button
             type="button"
             onClick={onToggle}
-            className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-200 transition hover:bg-gray-800"
+            className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-200 transition hover:bg-gray-800 cursor-pointer"
             aria-expanded={isOpen}
           >
             <span
@@ -675,7 +675,7 @@ export default function WorkflowTerminal({
             className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${
               !workflowName
                 ? "cursor-not-allowed text-gray-600"
-                : "text-gray-200 hover:bg-gray-800"
+                : "text-gray-200 hover:bg-gray-800 cursor-pointer"
             }`}
           >
             Actualizar
@@ -687,7 +687,7 @@ export default function WorkflowTerminal({
           <div className="h-2 cursor-row-resize border-b border-gray-800" onMouseDown={handleResizeStart} />
           <div className="space-y-2 border-b border-gray-800 px-3 py-2 text-[11px] text-gray-300">
             {submitError && (
-              <div className="rounded border border-red-500/40 bg-red-900/20 px-3 py-2 text-[11px] text-red-300">
+              <div className="rounded border border-red-500/40 bg-red-900/20 px-3 py-2 text-[11px] text-red-300 whitespace-pre-wrap font-mono">
                 {submitError}
               </div>
             )}

@@ -1,14 +1,27 @@
 import argparse
 import json
 import logging
-import os
 import joblib
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
+DEFAULT_INPUT_DIR = "/data/inputs"
+DEFAULT_OUTPUT_DIR = "/data/outputs"
+DEFAULT_CONFIG_DIR = "/data/config"
+
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+
+def discover_file(directory: Path, patterns, description: str) -> Path:
+    if not directory.exists():
+        raise FileNotFoundError(f"Directorio no encontrado para {description}: {directory}")
+    for pattern in patterns:
+        matches = sorted(directory.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No se encontraron archivos {description} en {directory} (patrones: {', '.join(patterns)})")
 
 def correct_rul_column(df, rul_column='RUL', id_column='ID'):
     if rul_column in df.columns:
@@ -165,17 +178,26 @@ def generate_series(generator, n_series, series_length, start_id=100, rul_column
 
 def main():
     parser = argparse.ArgumentParser(description="Genera series sintéticas a partir de un modelo bayesiano temporal.")
-    parser.add_argument("--model_path", required=True, help="Ruta del archivo de entrada (.csv o .txt)")
-    parser.add_argument("--output_data_path", required=True, help="Ruta donde guardar el modelo")
-    parser.add_argument("--config", required=True, help="Ruta al archivo de configuración JSON.")
+    parser.add_argument("--input-dir", default=DEFAULT_INPUT_DIR, help="Directorio que contiene el modelo entrenado")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Directorio donde guardar los datos sintéticos")
+    parser.add_argument("--config-dir", default=DEFAULT_CONFIG_DIR, help="Directorio con el archivo de configuración JSON.")
     args = parser.parse_args()
 
-    if not Path(args.config).exists():
-        logging.error(f"El archivo de configuración no se encontró en: {args.config}")
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    config_dir = Path(args.config_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        config_path = discover_file(config_dir, ["*.json"], "de configuración JSON")
+        model_path = discover_file(input_dir, ["*.pkl", "*.joblib"], "de modelo bayesiano")
+    except FileNotFoundError as exc:
+        logging.error(exc)
         exit(1)
 
-    with open(args.config, 'r') as f:
+    with open(config_path, 'r') as f:
         config = json.load(f)
+    logging.info(f"Configuración cargada desde {config_path}")
 
     required_keys = [ "n_series", "series_length", "start_id"]
     for key in required_keys:
@@ -183,27 +205,20 @@ def main():
             logging.error(f"Falta la clave requerida '{key}' en el archivo de configuración JSON.")
             exit(1)
 
-    model_path = args.model_path
-    output_data_path = args.output_data_path
     n_series = config["n_series"]
     series_length = config["series_length"]
     start_id = config["start_id"]
 
-    if not Path(model_path).exists():
-        logging.error(f"El archivo del modelo no se encontró en: {model_path}")
-        exit(1)
-
     logging.info("Cargando modelo bayesiano temporal...")
     generator = joblib.load(model_path)
+    logging.info(f"Modelo cargado desde {model_path}")
 
     logging.info(f"Generando {n_series} series sintéticas de longitud {series_length}...")
     df_generated = generate_series(generator, n_series, series_length, start_id)
 
-    output_dir = Path(output_data_path).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    df_generated.to_csv(output_data_path, index=False)
-    logging.info(f"Datos sintéticos guardados exitosamente en {output_data_path}")
+    output_path = output_dir / f"synthetic_{model_path.stem}.csv"
+    df_generated.to_csv(output_path, index=False)
+    logging.info(f"Datos sintéticos guardados exitosamente en {output_path}")
 
 class TimeSeriesBayesianGenerator:
     def __init__(self, df, id_col='ID', index_col='Cycle_Index', discretization_quantiles=3, unique_values_threshold=5):

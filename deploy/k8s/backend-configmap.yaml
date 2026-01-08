@@ -1,0 +1,29 @@
+# =============================================================================
+# Backend ConfigMap - Environment configuration
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: syntheticdata
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: synthetic-data-suite
+data:
+  # MinIO Configuration
+  # Adjust the endpoint based on where MinIO is deployed
+  MINIO_ENDPOINT: "minio.minio-dev.svc.cluster.local:9000"
+  MINIO_SECURE: "false"
+  MINIO_INPUT_BUCKET: "argo-artifacts"
+
+  # Argo Workflows Configuration
+  ARGO_SERVER_BASE_URL: "https://argo-server.argo.svc.cluster.local:2746"
+  ARGO_NAMESPACE: "argo"
+  ARGO_SERVER_INSECURE_SKIP_VERIFY: "true"
+
+  # Image validation (disabled in container - minikube not available)
+  SKIP_IMAGE_VALIDATION: "true"
+
+  # Logging
+  LOG_LEVEL: "INFO"

@@ -1,0 +1,7 @@
+{
+    "plantuml.render": "PlantUMLServer",
+    "plantuml.server": "https://kroki.io/plantuml",
+    "plantuml.includepaths": [
+        "docs/diagrams/lib/C4-PlantUML"
+    ]
+}

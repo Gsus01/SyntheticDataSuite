@@ -70,7 +70,8 @@ deploy_minio() {
 deploy_argo() {
   info "Creando namespace argo e instalando Argo Workflows..."
   kc create namespace argo --dry-run=client -o yaml | kc apply -f -
-  kc apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
+  # kc apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
+  kc apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.7.4/install.yaml
 
   info "Aplicando RBAC y credenciales de MinIO para Argo..."
   kc apply -f "$ROOT_DIR/deploy/argo/minio-creds-secret.yaml"
