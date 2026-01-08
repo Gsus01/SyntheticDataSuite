@@ -1,0 +1,72 @@
+@startuml data_model_classes
+title Workflow Data Model - Class Diagram
+
+skinparam class {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+    ArrowColor #1565c0
+}
+
+package "Graph Model" {
+    class FlowNode {
+        + id : string
+        + type : NodeType
+        + position : {x, y}
+        + data : FlowNodeData
+    }
+    
+    class FlowNodeData {
+        + label : string
+        + tone? : string
+        + templateName? : string
+        + parameters? : Record
+        + parameterDefaults? : Record
+        + uploadedArtifact? : NodeArtifact
+        + artifactPorts? : FlowNodePorts
+    }
+    
+    class FlowEdge {
+        + id : string
+        + source : string
+        + target : string
+        + sourceHandle? : string
+        + targetHandle? : string
+    }
+    
+    class NodeArtifact {
+        + bucket : string
+        + key : string
+        + size : number
+        + contentType? : string
+        + originalFilename? : string
+    }
+    
+    class FlowNodePorts {
+        + inputs : NodeArtifactPort[]
+        + outputs : NodeArtifactPort[]
+    }
+}
+
+package "Persistence Model" {
+    class StoredWorkflowRecord {
+        + workflowId : string
+        + name : string
+        + description? : string
+        + sessionId : string
+        + nodes : FlowNode[]
+        + edges : FlowEdge[]
+        + compiledManifest? : string
+        + nodeSlugMap : Record
+        + createdAt : string
+        + updatedAt : string
+        + version : number
+    }
+}
+
+FlowNode *-- FlowNodeData
+FlowNodeData *-- NodeArtifact
+FlowNodeData *-- FlowNodePorts
+StoredWorkflowRecord o-- FlowNode
+StoredWorkflowRecord o-- FlowEdge
+
+@enduml

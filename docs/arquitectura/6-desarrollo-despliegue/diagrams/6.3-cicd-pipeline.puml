@@ -1,0 +1,52 @@
+@startuml cicd_pipeline
+title CI/CD Pipeline Flow
+
+skinparam activity {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+start
+
+partition "Pull Request" #E8F5E9 {
+    :Build + Test + Scan;
+    if (Checks OK?) then (yes)
+        :Code Review;
+    else (no)
+        #FFCDD2:Fix issues;
+        stop
+    endif
+}
+
+:Merge to **main**;
+
+partition "Continuous Integration" #E3F2FD {
+    :Build image;
+    :Run tests;
+    :Security scan;
+    :Push **:sha** to registry;
+}
+
+partition "Deploy Dev" #FFF3E0 {
+    :Deploy to Dev\n(automatic);
+}
+
+if (Release tag?) then (yes)
+    :Push **:vX.Y.Z**;
+    
+    partition "Deploy Pre" #F3E5F5 {
+        :Deploy to Preproduction;
+        :Integration + QA tests;
+    }
+    
+    partition "Deploy Prod" #FFEBEE {
+        #FFF9C4:**Manual approval**;
+        :Deploy to Production;
+        #C8E6C9:Done;
+    }
+else (no)
+endif
+
+stop
+
+@enduml

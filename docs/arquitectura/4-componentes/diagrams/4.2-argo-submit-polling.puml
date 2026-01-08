@@ -1,0 +1,47 @@
+@startuml argo_submit_polling
+title Workflow Submit and Status Polling
+
+skinparam participant {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+participant "Frontend" as F
+participant "Backend" as B
+participant "Argo CLI\n(Prototype)" as CLI #ffecb3
+participant "Argo Server\n(Target)" as API #c8e6c9
+
+== Submit Workflow ==
+
+F -> B : POST /workflow/submit
+activate B
+
+alt Prototype (CLI)
+    B -> CLI : argo submit workflow.yaml
+    CLI --> B : workflowName, namespace
+else Target Architecture (REST)
+    B -> API : POST /api/v1/workflows
+    API --> B : workflow object
+end
+
+B --> F : { workflowName, namespace }
+deactivate B
+
+== Status Polling ==
+
+loop Every 2-5 seconds
+    F -> B : GET /workflow/status?name=...
+    activate B
+    B -> API : GET /api/v1/workflows/{ns}/{name}
+    API --> B : { phase, nodes, ... }
+    B --> F : { phase, nodes, finished }
+    deactivate B
+end
+
+' note right of CLI
+'   **CLI usage is temporary**
+'   Due to API issues in
+'   prototype Argo version
+' end note
+
+@enduml

@@ -1,0 +1,54 @@
+@startuml compilation_flow
+title Workflow Compilation Pipeline
+
+skinparam activity {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+start
+
+:Receive graph payload\n(nodes + edges);
+
+partition "Phase 1: Validation" {
+    :Parse with Pydantic models;
+    if (All nodes have templateName?) then (yes)
+        :Load catalog and verify templates;
+        if (All templates exist?) then (yes)
+        else (no)
+            #FFCDD2:Error: Template not found;
+            stop
+        endif
+    else (no)
+        #FFCDD2:Error: Missing templateName;
+        stop
+    endif
+}
+
+partition "Phase 2: Build Node Plans" {
+    :For each node:;
+    :• Generate unique slug;
+    :• Build output paths;
+    :• Merge config parameters;
+    :• Upload config to S3;
+}
+
+partition "Phase 3: Resolve Dependencies" {
+    :For each edge:;
+    :• Register target depends on source;
+    :• Match artifact bindings;
+}
+
+partition "Phase 4: Generate Manifest" {
+    :Build Argo YAML:;
+    :• Workflow metadata;
+    :• Global input parameters;
+    :• DAG with tasks and deps;
+}
+
+:Save manifest to MinIO;
+:Return result to frontend;
+
+stop
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml repository_organization
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+LAYOUT_LEFT_RIGHT()
+
+title Repository Organization - Hybrid Approach
+
+Person(dev, "Developer", "Develops features and fixes")
+Person(ops, "Platform Team", "Manages infrastructure")
+
+System_Boundary(app_repo, "Application Repository") {
+    Container(services, "services/", "Code", "Backend services\n(API, Auth, Workflow, etc.)")
+    Container(frontend, "frontend/", "Code", "Web application\n(Next.js, React Flow)")
+    Container(libs, "libs/", "Code", "Shared utilities\nand SDK clients")
+    Container(contracts, "api-contracts/", "OpenAPI/JSON Schema", "API definitions\nand event schemas")
+    Container(docs, "docs/", "Markdown", "Technical documentation\nand ADRs")
+}
+
+System_Boundary(infra_repo, "Infrastructure Repository") {
+    Container(charts, "charts/", "Helm/Kustomize", "Kubernetes manifests\nand templates")
+    Container(envs, "environments/", "YAML", "dev / pre / prod\nvalue overrides")
+    Container(policies, "policies/", "YAML", "NetworkPolicies\nRBAC definitions")
+}
+
+System_Ext(registry, "Container Registry", "ghcr.io / ECR / GCR")
+System_Ext(k8s, "Kubernetes Cluster", "Target deployment")
+
+Rel(dev, app_repo, "Commits code")
+Rel(ops, infra_repo, "Manages deployments")
+
+Rel(services, registry, "CI builds & pushes", "image:sha")
+Rel(frontend, registry, "CI builds & pushes", "image:sha")
+
+Rel(charts, k8s, "ArgoCD / Flux deploys")
+Rel(charts, registry, "References images")
+
+@enduml

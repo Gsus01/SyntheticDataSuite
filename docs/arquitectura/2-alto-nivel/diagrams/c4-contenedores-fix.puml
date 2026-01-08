@@ -1,0 +1,31 @@
+@startuml c4_containers_fix
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+LAYOUT_TOP_DOWN()
+
+title Digital Twin Orchestration Platform - Container Diagram (C4 Level 2)
+
+Person(user, "Platform User", "Designs and executes workflows")
+
+System_Boundary(platform, "Digital Twin Orchestration Platform") {
+    Container(frontend, "Web Application", "Next.js, React Flow", "Visual workflow editor and monitoring dashboard")
+    Container(backend, "Backend API", "FastAPI, Python", "Workflow management, compilation and execution control")
+    ContainerDb(database, "Database", "PostgreSQL", "Users, workflow definitions, execution history")
+}
+
+System_Ext(keycloak, "Keycloak", "Identity Provider (OIDC)")
+System_Ext(minio, "MinIO", "Object Storage (S3)")
+System_Ext(argo, "Argo Workflows", "Workflow Orchestration")
+System_Ext(k8s, "Kubernetes", "Container Platform")
+
+Rel(user, frontend, "Uses", "HTTPS")
+Rel(frontend, backend, "API calls", "REST/JSON")
+Rel(backend, keycloak, "Validates tokens", "OIDC")
+Rel(backend, database, "Reads/writes", "SQL")
+Rel(backend, minio, "Stores artifacts", "S3")
+Rel(backend, argo, "Submits workflows", "REST")
+Rel_D(argo, k8s, "Creates pods")
+Rel_D(argo, minio, "Artifact passing", "S3")
+
+@enduml

@@ -1,0 +1,70 @@
+@startuml target_services_architecture
+title Target Services Architecture
+
+left to right direction
+skinparam linetype ortho
+
+skinparam rectangle {
+    roundCorner 10
+}
+skinparam component {
+    BackgroundColor<<gateway>> #2196F3
+    FontColor<<gateway>> White
+    BackgroundColor<<core>> #4CAF50
+    FontColor<<core>> White
+    BackgroundColor<<support>> #FF9800
+    FontColor<<support>> White
+    BackgroundColor<<external>> #607D8B
+    FontColor<<external>> White
+}
+
+' ===== ENTRY =====
+rectangle "Entry Layer" as entry {
+    component "API Gateway" as gateway <<gateway>>
+}
+
+' ===== CORE =====
+rectangle "Core Services" as core {
+    component "Auth\nService" as auth <<core>>
+    component "Workflow\nService" as workflow <<core>>
+    component "Execution\nService" as execution <<core>>
+    component "Artifact\nService" as artifact <<core>>
+}
+
+' ===== SUPPORT =====
+rectangle "Support Services" as support {
+    component "Catalog\nService" as catalog <<support>>
+    component "Metadata\nService" as metadata <<support>>
+    component "Notification\nService" as notification <<support>>
+}
+
+' ===== EXTERNAL =====
+rectangle "External Systems" as external {
+    component "Identity\nProvider" as idp <<external>>
+    component "PostgreSQL" as postgres <<external>>
+    component "Argo\nWorkflows" as argo <<external>>
+    component "MinIO\n(S3)" as minio <<external>>
+}
+
+' ===== RELATIONSHIPS =====
+' Entry to Core
+gateway --> auth
+gateway --> workflow
+gateway --> execution
+gateway --> artifact
+
+' Core to Support
+workflow --> catalog : templates
+execution --> metadata : records
+execution --> notification : alerts
+
+' Core to External
+auth --> idp : OIDC
+execution --> argo : submit
+
+' Support to External
+catalog --> postgres : stores
+metadata --> postgres : stores
+artifact --> minio : stores
+
+@enduml

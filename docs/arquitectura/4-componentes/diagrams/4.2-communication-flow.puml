@@ -1,0 +1,62 @@
+@startuml communication_flow
+title Communication Flow - Workflow Execution
+
+skinparam participant {
+    BackgroundColor #e1f5fe
+    BorderColor #01579b
+}
+
+actor "User" as User
+participant "Frontend\n(React)" as Frontend #e3f2fd
+participant "Backend API\n(FastAPI)" as Backend #fff9c4
+database "MinIO\n(S3)" as MinIO #ffe0b2
+participant "Argo\nWorkflows" as Argo #e8f5e9
+participant "Kubernetes" as K8s #f3e5f5
+collections "Workflow\nPods" as Pods #fce4ec
+
+== 1. Workflow Design (Synchronous REST) ==
+User -> Frontend : Design visual workflow
+Frontend -> Backend : GET /templates
+Backend --> Frontend : Node catalog (JSON)
+Frontend -> Backend : POST /artifacts/upload
+Backend -> MinIO : Store input file
+MinIO --> Backend : Confirm
+Backend --> Frontend : Artifact reference
+
+== 2. Workflow Submission (Synchronous REST) ==
+Frontend -> Backend : POST /workflow/submit
+activate Backend
+Backend -> Backend : Translate graph to YAML
+Backend -> MinIO : Store manifest
+Backend -> Argo : argo submit (CLI)
+Argo --> Backend : workflowName
+Backend --> Frontend : Submission confirmation
+deactivate Backend
+
+== 3. Workflow Execution (Artifact Passing) ==
+Argo -> K8s : Create pods for steps
+K8s -> Pods : Start containers
+activate Pods
+Pods -> MinIO : Read input artifacts
+Pods -> Pods : Process data
+Pods -> MinIO : Write output artifacts
+Pods -> K8s : Exit with status
+deactivate Pods
+K8s -> Argo : Report completion
+
+== 4. Status Monitoring (Polling) ==
+loop Every 2 seconds
+    Frontend -> Backend : GET /workflow/status
+    Backend -> Argo : Query workflow state
+    Argo --> Backend : Node phases
+    Backend --> Frontend : Status updates
+end
+
+== 5. Results Retrieval (Synchronous REST) ==
+Frontend -> Backend : GET /artifacts/download
+Backend -> MinIO : Fetch artifact
+MinIO --> Backend : Binary data
+Backend --> Frontend : Streamed file
+Frontend -> User : Display/download results
+
+@enduml

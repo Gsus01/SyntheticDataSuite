@@ -2,7 +2,7 @@
 trigger: manual
 ---
 
-Voy a realizar la documentación de una aplicación. Para el desarrollo de diagramas se utilizara plantUML y C4. La documentación de plantUML está en el pdf de https://pdf.plantuml.net/PlantUML_Language_Reference_Guide_es.pdf, y la guia de C4 está en la siguiente página web y sus diferentes secciones: https://c4model.com/. Si tienes alguna duda debes consultar primero estas guias a ver si tienen la resupuesta, y si no la tienen ya buscar en sitios externos. Para implementar los diagramas vamos a utilizar https://github.com/plantuml-stdlib/C4-PlantUML?tab=readme-ov-file.
+Voy a realizar la documentación de esta aplicación. Para el desarrollo de diagramas se utilizara plantUML y C4. La documentación de plantUML está en el pdf de https://pdf.plantuml.net/PlantUML_Language_Reference_Guide_es.pdf, y la guia de C4 está en la siguiente página web y sus diferentes secciones: https://c4model.com/. Si tienes alguna duda debes consultar primero estas guias a ver si tienen la resupuesta, y si no la tienen ya buscar en sitios externos. Para implementar los diagramas vamos a utilizar https://github.com/plantuml-stdlib/C4-PlantUML?tab=readme-ov-file.
 
 Cuando te haga preguntas no contestes con una certeza absoluta e inecesaria. Por ejemplo, si explicas que se esta utilizando una tecnología X, no quiero que redactes cosas como "X es la mejor solucion para...". Tenemos que defender el diseño que se ha hecho, explicar los motivos que nos han llevado a elegir esa herramienta y ventajas y desventajas, pero no sentencias absolutas.
 

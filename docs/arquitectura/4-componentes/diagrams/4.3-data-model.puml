@@ -1,0 +1,134 @@
+@startuml data_model
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Data Model - Conceptual Entity Relationship
+
+skinparam class {
+    BackgroundColor #e1f5fe
+    BorderColor #01579b
+    ArrowColor #01579b
+}
+
+package "User Domain" {
+    class User {
+        + id : UUID
+        + email : String
+        + name : String
+        + role : Enum
+        + createdAt : DateTime
+    }
+    
+    class Role {
+        + id : String
+        + name : String
+        + permissions : List<Permission>
+    }
+}
+
+package "Workflow Definition Domain" {
+    class WorkflowDefinition {
+        + id : UUID
+        + name : String
+        + description : String
+        + ownerId : UUID
+        + sessionId : String
+        + version : Int
+        + createdAt : DateTime
+        + updatedAt : DateTime
+    }
+    
+    class FlowGraph {
+        + nodes : List<FlowNode>
+        + edges : List<FlowEdge>
+    }
+    
+    class FlowNode {
+        + id : String
+        + type : String
+        + position : {x, y}
+        + data : NodeData
+    }
+    
+    class NodeData {
+        + label : String
+        + templateName : String
+        + parameters : Map
+        + uploadedArtifact : ArtifactRef
+    }
+    
+    class FlowEdge {
+        + id : String
+        + source : String
+        + target : String
+        + sourceHandle : String
+        + targetHandle : String
+    }
+}
+
+package "Catalog Domain" {
+    class NodeTemplate {
+        + name : String
+        + type : Enum
+        + version : String
+        + parameters : List<String>
+        + parameterDefaults : Map
+        + limits : ResourceLimits
+    }
+    
+    class ArtifactSpec {
+        + name : String
+        + path : String
+    }
+    
+    class Artifacts {
+        + inputs : List<ArtifactSpec>
+        + outputs : List<ArtifactSpec>
+    }
+}
+
+package "Execution Domain" {
+    class WorkflowExecution {
+        + workflowName : String
+        + namespace : String
+        + definitionId : UUID
+        + userId : UUID
+        + phase : Enum
+        + startedAt : DateTime
+        + finishedAt : DateTime
+    }
+    
+    class NodeExecution {
+        + slug : String
+        + nodeId : String
+        + phase : Enum
+        + podName : String
+        + startedAt : DateTime
+        + finishedAt : DateTime
+        + message : String
+    }
+    
+    class Artifact {
+        + bucket : String
+        + key : String
+        + size : Long
+        + contentType : String
+        + uploadedAt : DateTime
+    }
+}
+
+' Relationships
+User "1" -- "*" WorkflowDefinition : owns
+User "*" -- "1" Role : has
+WorkflowDefinition "1" *-- "1" FlowGraph : contains
+FlowGraph "1" *-- "*" FlowNode : contains
+FlowGraph "1" *-- "*" FlowEdge : contains
+FlowNode "1" *-- "1" NodeData : has
+FlowNode "*" -- "1" NodeTemplate : references
+NodeTemplate "1" *-- "1" Artifacts : defines
+Artifacts "1" *-- "*" ArtifactSpec : contains
+
+WorkflowDefinition "1" -- "*" WorkflowExecution : produces
+WorkflowExecution "1" *-- "*" NodeExecution : contains
+NodeExecution "*" -- "*" Artifact : produces/consumes
+
+@enduml

@@ -1,0 +1,45 @@
+@startuml workflow_execution_states
+title Workflow Execution - Node State Transitions
+
+skinparam state {
+    BackgroundColor<<pending>> #FFF3E0
+    BorderColor<<pending>> #E65100
+    BackgroundColor<<running>> #E3F2FD
+    BorderColor<<running>> #1565C0
+    BackgroundColor<<succeeded>> #E8F5E9
+    BorderColor<<succeeded>> #2E7D32
+    BackgroundColor<<failed>> #FFEBEE
+    BorderColor<<failed>> #C62828
+}
+
+[*] --> Pending : Node created
+Pending --> Running : Argo starts pod
+Running --> Succeeded : Pod exits 0
+Running --> Failed : Pod exits != 0
+Running --> Error : System error
+
+Succeeded --> [*]
+Failed --> [*]
+Error --> [*]
+
+note right of Pending
+  **Visual:**
+  Amber/Yellow badge
+end note
+
+note right of Running
+  **Visual:**
+  Blue badge + animation
+end note
+
+note right of Succeeded
+  **Visual:**
+  Green badge ✓
+end note
+
+note right of Failed
+  **Visual:**
+  Red badge ✗
+end note
+
+@enduml

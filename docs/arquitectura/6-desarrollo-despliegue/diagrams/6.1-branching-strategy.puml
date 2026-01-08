@@ -1,0 +1,57 @@
+@startuml branching_strategy
+title Trunk-Based Development - Branching and Release Strategy
+
+skinparam activity {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+|main|
+start
+:main branch\n(always deployable);
+
+fork
+    |feature|
+    :Create feature/ABC-123;
+    :Develop & commit;
+    :PR + review + CI;
+    |main|
+    :Merge to main;
+fork again
+    |feature|
+    :Create fix/DEF-456;
+    :Fix & commit;
+    :PR + review + CI;
+    |main|
+    :Merge to main;
+end fork
+
+:Tag v1.4.0;
+note right
+  **Release**
+  • Tag on main
+  • Triggers image build
+  • Deploys to staging
+end note
+
+:Continue development...;
+
+fork
+    |hotfix|
+    #FFECB3:Urgent bug found!;
+    :Create hotfix/GHI-789\nfrom tag v1.4.0;
+    :Fix & test;
+    :Tag v1.4.1;
+    |main|
+    :Cherry-pick to main;
+fork again
+    |feature|
+    :New features...;
+    |main|
+    :Merge to main;
+end fork
+
+:Tag v1.5.0;
+stop
+
+@enduml

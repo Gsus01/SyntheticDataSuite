@@ -1,0 +1,28 @@
+@startuml frontend_backend_flow
+title Frontend ↔ Backend Communication
+
+skinparam participant {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+participant "Frontend\n(React)" as F
+participant "Backend\n(FastAPI)" as B
+
+F -> B : HTTP Request\n(GET/POST + JSON)
+activate B
+B -> B : Validate & Process
+B --> F : HTTP Response\n(JSON + Status Code)
+deactivate B
+
+note right of B
+  **Validation:**
+  • Pydantic models
+  • Type checking
+  
+  **Errors:**
+  • 4xx: Client error
+  • 5xx: Server error
+end note
+
+@enduml

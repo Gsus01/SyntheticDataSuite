@@ -1,0 +1,47 @@
+@startuml artifact_passing
+title Artifact Passing Pattern Between Workflow Steps
+
+skinparam rectangle {
+    BackgroundColor #e3f2fd
+    BorderColor #1565c0
+}
+
+skinparam database {
+    BackgroundColor #fff3e0
+    BorderColor #e65100
+}
+
+rectangle "Step 1: Preprocessing" as step1 {
+    component "Container" as c1
+}
+
+database "MinIO\n(S3 Storage)" as minio
+
+rectangle "Step 2: Training" as step2 {
+    component "Container" as c2
+}
+
+c1 -right-> minio : **1.** Write output\n(/tmp/output/data.csv)
+minio -right-> c2 : **2.** Mount input\n(/tmp/input/data.csv)
+
+note bottom of minio
+  **No direct pod-to-pod communication**
+  
+  • Step 1 writes to local path
+  • Argo uploads to S3 automatically
+  • Argo downloads to Step 2
+  • Pods are ephemeral and isolated
+end note
+
+note top of step1
+  Pod created,
+  executes,
+  terminates
+end note
+
+note top of step2
+  Created only after
+  Step 1 succeeds
+end note
+
+@enduml

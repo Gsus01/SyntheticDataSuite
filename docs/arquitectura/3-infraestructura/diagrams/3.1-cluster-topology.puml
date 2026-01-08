@@ -1,0 +1,51 @@
+@startuml cluster-topology
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Deployment.puml
+
+title Kubernetes Cluster Topology - Target Architecture
+
+Deployment_Node(cluster, "Kubernetes Cluster", "EKS / AKS / GKE / On-prem") {
+    
+    Deployment_Node(control_plane, "Control Plane", "Master Nodes x3") {
+        Container(api_server, "API Server", "K8s", "Cluster entry point")
+        Container(scheduler, "Scheduler", "K8s", "Pod placement")
+        Container(controller, "Controller Manager", "K8s", "Maintains desired state")
+        ContainerDb(etcd, "etcd", "Distributed KV", "Cluster state storage")
+    }
+    
+    Deployment_Node(workers, "Worker Nodes", "Scalable pool") {
+        
+        Deployment_Node(ns_platform, "Namespace: dtwin-platform", "Core application") {
+            Container(backend_pod, "Backend API", "FastAPI", "REST API + Workflow Builder")
+            Container(frontend_pod, "Frontend", "Next.js", "Visual Flow Editor")
+        }
+        
+        Deployment_Node(ns_workflows, "Namespace: dtwin-workflows", "Execution engine") {
+            Container(argo_server, "Argo Server", "Argo Workflows", "Workflow orchestration")
+            Container(argo_controller, "Workflow Controller", "Argo", "DAG execution")
+            Container(workflow_pods, "Workflow Pods", "Dynamic", "Ephemeral task runners")
+        }
+        
+        Deployment_Node(ns_storage, "Namespace: dtwin-storage", "Artifact persistence") {
+            ContainerDb(minio, "Object Storage", "MinIO / S3", "Workflow artifacts")
+        }
+        
+        Deployment_Node(ns_data, "Namespace: dtwin-data", "Metadata & state") {
+            ContainerDb(postgres, "PostgreSQL", "Relational DB", "Users, workflows, audit")
+        }
+        
+        Deployment_Node(ns_infra, "Namespace: dtwin-infra", "Platform infrastructure") {
+            Container(ingress, "Ingress Controller", "Nginx", "HTTP/HTTPS routing")
+            Container(certmanager, "Cert Manager", "Let's Encrypt", "SSL certificates")
+        }
+    }
+}
+
+Rel(ingress, frontend_pod, "app.dtwin.io", "HTTPS")
+Rel(ingress, backend_pod, "api.dtwin.io", "HTTPS")
+Rel(backend_pod, argo_server, "Submits workflows", "gRPC/REST")
+Rel(backend_pod, postgres, "Reads/Writes metadata", "SQL")
+Rel(argo_controller, workflow_pods, "Creates/manages", "K8s API")
+Rel(workflow_pods, minio, "Read/Write artifacts", "S3 API")
+
+SHOW_LEGEND()
+@enduml
