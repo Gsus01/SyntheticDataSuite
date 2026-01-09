@@ -1,3 +1,19 @@
+# Guía de Despliegue Manual (Referencia Educativa)
+
+> [!TIP]
+> **Para desarrollo rápido usa los comandos automatizados:**
+> - `make dev` — Desarrollo local (backend/frontend fuera de contenedores)
+> - `make k8s-deploy` — Despliegue completo en Kubernetes con Ingress
+>
+> Consulta [`docs/dev-workflow.md`](../docs/dev-workflow.md) para la guía completa.
+
+Esta guía documenta los **pasos manuales** que realizan los scripts automáticos. Es útil para:
+- Entender qué hacen los scripts internamente
+- Debugging cuando algo falla
+- Despliegues en entornos distintos a minikube local
+
+---
+
 ### Requisitos Previos
 * Tener instalado y corriendo `minikube`. Puedes iniciarlo con `minikube start`.
 * Tener instalado `kubectl`.

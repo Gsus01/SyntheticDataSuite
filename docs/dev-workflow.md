@@ -77,13 +77,23 @@ Todos los scripts están en `scripts/dev/`.
 ### Makefile (atajos)
 
 ```bash
-make dev                 # orquesta todo
+# Desarrollo local (backend/frontend fuera de contenedores)
+make dev                 # orquesta todo: k8s + port-forwards + backend + frontend
+
+# Despliegue completo en Kubernetes (todo en contenedores)
+make k8s-deploy          # despliega todo en k8s con Ingress
+make k8s-stop            # detiene solo la aplicación (mantiene MinIO/Argo)
+make k8s-rebuild         # reconstruye imágenes y reinicia pods
+
+# Infraestructura (MinIO, Argo)
 make k8s-up              # sube MinIO + Argo
 make k8s-up-minio        # sólo MinIO
 make k8s-up-argo         # sólo Argo
 make k8s-down            # elimina ambos namespaces
 make k8s-down-minio      # sólo minio-dev
 make k8s-down-argo       # sólo argo
+
+# Port-forwarding y componentes individuales
 make port-forward        # abre PF (MinIO/Argo)
 make port-forward-stop   # cierra PF
 make port-forward-status # estado PF
@@ -93,6 +103,60 @@ make workflow            # envía workflow de ejemplo a Argo
 ```
 
 ---
+
+### Despliegue completo en Kubernetes (con Ingress)
+
+Si prefieres ejecutar **todo** dentro de Kubernetes (incluyendo backend y frontend en contenedores), usa:
+
+```bash
+make k8s-deploy
+```
+
+Este comando automatiza todo el proceso:
+1. Arranca minikube si no está corriendo
+2. Habilita el addon de Ingress
+3. Despliega MinIO y Argo
+4. Construye las imágenes Docker del backend y frontend
+5. Despliega la aplicación en el namespace `syntheticdata`
+6. Configura port-forwards para MinIO y Argo
+
+#### Configuración de DNS (primera vez)
+
+El script verifica si `syntheticdata.local` está en `/etc/hosts`. Si es la primera vez, deberás añadirlo:
+
+```bash
+echo "$(minikube ip) syntheticdata.local" | sudo tee -a /etc/hosts
+```
+
+> **Nota:** Si la IP de minikube cambia (por ejemplo, tras `minikube delete`), actualiza la entrada en `/etc/hosts`.
+
+#### URLs de acceso (modo Ingress)
+
+| Servicio | URL |
+|----------|-----|
+| Frontend | http://syntheticdata.local |
+| Backend API | http://syntheticdata.local/api/health |
+| MinIO Console | http://localhost:9090 |
+| Argo UI | https://localhost:2746 |
+
+#### Comandos relacionados
+
+```bash
+make k8s-stop      # Detiene solo la aplicación (mantiene MinIO/Argo)
+make k8s-rebuild   # Reconstruye imágenes y reinicia pods (útil tras cambios de código)
+make k8s-down      # Detiene todo (incluyendo MinIO/Argo)
+```
+
+#### Diferencia con `make dev`
+
+| Aspecto | `make dev` | `make k8s-deploy` |
+|---------|------------|-------------------|
+| Backend/Frontend | Procesos locales | Contenedores en k8s |
+| Hot-reload | ✅ Sí | ❌ No (requiere rebuild) |
+| URLs | `localhost:3000/8000` | `syntheticdata.local` |
+| Uso típico | Desarrollo diario | Testing de integración / demo |
+
+
 
 ### Puertos y URLs
 - MinIO API: `http://localhost:9000`

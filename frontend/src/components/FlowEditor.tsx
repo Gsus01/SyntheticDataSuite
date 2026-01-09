@@ -910,7 +910,7 @@ function EditorInner() {
   }, [applyWorkflowStatus, cancelStatusPolling, submitResult]);
 
   return (
-    <div className="flex h-screen w-full bg-gray-50">
+    <div className="flex h-full w-full bg-gray-50">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Modern Header */}

@@ -1,5 +1,9 @@
 # Kubernetes Deployment
 
+> [!TIP]
+> **Despliegue automatizado:** Ejecuta `make k8s-deploy` para desplegar todo con un solo comando.
+> Consulta [`docs/dev-workflow.md`](../../docs/dev-workflow.md) para más detalles.
+
 This directory contains Kubernetes manifests to deploy the SyntheticDataSuite backend and frontend.
 
 ## Prerequisites
@@ -307,7 +311,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
 3. **Deploy Argo Workflows** (if not already):
    ```bash
    kubectl create namespace argo
-   kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.5.0/install.yaml
+   kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.7.4/install.yaml
    ```
 
 4. **Deploy MinIO** (if not already):
