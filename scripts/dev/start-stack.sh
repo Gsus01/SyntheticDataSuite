@@ -73,9 +73,16 @@ fi
 
 if [[ "$DO_FRONTEND" -eq 1 ]]; then
   info "Arrancando frontend (http://localhost:3000)..."
-  # En desarrollo local, el frontend debe conectar directamente al backend local
-  # (no a través de Ingress que usa /api)
-  export NEXT_PUBLIC_API_BASE_URL="http://localhost:8000"
+  # Use relative /api path - Next.js rewrites will proxy to backend
+  # This allows remote access without exposing port 8000 directly
+  export NEXT_PUBLIC_API_BASE_URL="/api"
+  
+  # Verificar si node_modules existe, si no, ejecutar npm install
+  if [[ ! -d "$ROOT_DIR/frontend/node_modules" ]]; then
+    info "node_modules no encontrado, ejecutando npm install..."
+    npm --prefix "$ROOT_DIR/frontend" install
+  fi
+  
   npm --prefix "$ROOT_DIR/frontend" run dev &
   PIDS+=($!)
 fi

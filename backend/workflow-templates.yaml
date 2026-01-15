@@ -220,6 +220,350 @@ templates:
           archive:
             none: {}
 
+  # ============================================================================
+  # GAN (Generative Adversarial Networks)
+  # ============================================================================
+  train-gan-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-gan-config
+          path: /data/config/training_gan.json
+    container:
+      image: docker.io/library/training-GAN:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/gan_model.pkl
+          archive:
+            none: {}
+
+  generate-gan-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/gan_model.pkl
+          archive:
+            none: {}
+        - name: generation-gan-config
+          path: /data/config/generation_gan.json
+    container:
+      image: docker.io/library/generation-GAN:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_gan_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Normalising Flows
+  # ============================================================================
+  train-normalising-flows-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-normalising-flows-config
+          path: /data/config/training_normalising_flows.json
+    container:
+      image: docker.io/library/training-Normalising_Flows:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/normalising_flows_model.pkl
+          archive:
+            none: {}
+
+  generate-normalising-flows-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/normalising_flows_model.pkl
+          archive:
+            none: {}
+        - name: generation-normalising-flows-config
+          path: /data/config/generation_normalising_flows.json
+    container:
+      image: docker.io/library/generation-Normalising_Flows:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_normalising_flows_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # ARIMA-SARIMA
+  # ============================================================================
+  train-arima-sarima-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-arima-sarima-config
+          path: /data/config/training_arima_sarima.json
+    container:
+      image: docker.io/library/training-arima-sarima:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/arima_sarima_model.pkl
+          archive:
+            none: {}
+
+  generate-arima-sarima-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/arima_sarima_model.pkl
+          archive:
+            none: {}
+        - name: generation-arima-sarima-config
+          path: /data/config/generation_arima_sarima.json
+    container:
+      image: docker.io/library/generation-arima-sarima:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_arima_sarima_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Difusion
+  # ============================================================================
+  train-difusion-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-difusion-config
+          path: /data/config/training_difusion.json
+    container:
+      image: docker.io/library/training-difusion:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/difusion_model.pkl
+          archive:
+            none: {}
+
+  generate-difusion-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/difusion_model.pkl
+          archive:
+            none: {}
+        - name: generation-difusion-config
+          path: /data/config/generation_difusion.json
+    container:
+      image: docker.io/library/generation-difusion:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_difusion_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Genetic Algorithms
+  # ============================================================================
+  train-genetic-algorithms-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-genetic-algorithms-config
+          path: /data/config/training_genetic_algorithms.json
+    container:
+      image: docker.io/library/training-genetic_algorithms:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/genetic_algorithms_model.pkl
+          archive:
+            none: {}
+
+  generate-genetic-algorithms-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/genetic_algorithms_model.pkl
+          archive:
+            none: {}
+        - name: generation-genetic-algorithms-config
+          path: /data/config/generation_genetic_algorithms.json
+    container:
+      image: docker.io/library/generation-genetic-algorithms:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_genetic_algorithms_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Kernel Density Estimators
+  # ============================================================================
+  train-kernel-density-estimators-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-kernel-density-estimators-config
+          path: /data/config/training_kernel_density_estimators.json
+    container:
+      image: docker.io/library/training-kernel_density_estimators:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/kernel_density_estimators_model.pkl
+          archive:
+            none: {}
+
+  generate-kernel-density-estimators-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/kernel_density_estimators_model.pkl
+          archive:
+            none: {}
+        - name: generation-kernel-density-estimators-config
+          path: /data/config/generation_kernel_density_estimators.json
+    container:
+      image: docker.io/library/generation-kernel_density_estimators:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_kernel_density_estimators_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Sparse Coding
+  # ============================================================================
+  train-sparse-coding-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-sparse-coding-config
+          path: /data/config/training_sparse_coding.json
+    container:
+      image: docker.io/library/training-sparse_coding:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/sparse_coding_model.pkl
+          archive:
+            none: {}
+
+  generate-sparse-coding-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/sparse_coding_model.pkl
+          archive:
+            none: {}
+        - name: generation-sparse-coding-config
+          path: /data/config/generation_sparse_coding.json
+    container:
+      image: docker.io/library/generation-sparse_coding:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_sparse_coding_model.csv
+          archive:
+            none: {}
+
+  # ============================================================================
+  # Variational Autoencoders (VAE)
+  # ============================================================================
+  train-variational-autoencoders-model:
+    inputs:
+      artifacts:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+          archive:
+            none: {}
+        - name: training-variational-autoencoders-config
+          path: /data/config/training_variational_autoencoders.json
+    container:
+      image: docker.io/library/training-variational_autoencoders:latest
+      imagePullPolicy: Never
+      command: [python, model_generation.py]
+    outputs:
+      artifacts:
+        - name: trained-model
+          path: /data/outputs/vae_model.pkl
+          archive:
+            none: {}
+
+  generate-variational-autoencoders-data:
+    inputs:
+      artifacts:
+        - name: trained-model
+          path: /data/inputs/vae_model.pkl
+          archive:
+            none: {}
+        - name: generation-variational-autoencoders-config
+          path: /data/config/generation_variational_autoencoders.json
+    container:
+      image: docker.io/library/generation-variational_autoencoders:latest
+      imagePullPolicy: Never
+      command: [python, data_generation.py]
+    outputs:
+      artifacts:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_vae_model.csv
+          archive:
+            none: {}
+
   train-gym-pybullet-rl:
     inputs:
       artifacts:

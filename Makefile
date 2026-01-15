@@ -8,7 +8,7 @@ dev:
 
 backend:
 	uv sync --project backend
-	uv run --project backend uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app
+	uv run --project backend uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend
 
 frontend:
 	cd frontend && NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
