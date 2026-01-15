@@ -185,6 +185,286 @@ nodes:
           path: /data/outputs/synthetic_bayesian_network_model.csv
     limits: {}
 
+  # ============================================================================
+  # GAN (Generative Adversarial Networks)
+  # ============================================================================
+  - name: train-gan-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/GAN/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-gan-config
+          path: /data/config/training_gan.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/gan_model.pkl
+    limits: {}
+
+  - name: generate-gan-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/GAN/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/gan_model.pkl
+        - name: generation-gan-config
+          path: /data/config/generation_gan.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_gan_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Normalising Flows
+  # ============================================================================
+  - name: train-normalising-flows-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/Normalising_Flows/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-normalising-flows-config
+          path: /data/config/training_normalising_flows.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/normalising_flows_model.pkl
+    limits: {}
+
+  - name: generate-normalising-flows-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/Normalising_Flows/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/normalising_flows_model.pkl
+        - name: generation-normalising-flows-config
+          path: /data/config/generation_normalising_flows.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_normalising_flows_model.csv
+    limits: {}
+
+  # ============================================================================
+  # ARIMA-SARIMA
+  # ============================================================================
+  - name: train-arima-sarima-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/arima-sarima/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-arima-sarima-config
+          path: /data/config/training_arima_sarima.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/arima_sarima_model.pkl
+    limits: {}
+
+  - name: generate-arima-sarima-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/arima-sarima/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/arima_sarima_model.pkl
+        - name: generation-arima-sarima-config
+          path: /data/config/generation_arima_sarima.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_arima_sarima_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Difusion
+  # ============================================================================
+  - name: train-difusion-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/difusion/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-difusion-config
+          path: /data/config/training_difusion.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/difusion_model.pkl
+    limits: {}
+
+  - name: generate-difusion-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/difusion/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/difusion_model.pkl
+        - name: generation-difusion-config
+          path: /data/config/generation_difusion.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_difusion_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Genetic Algorithms
+  # ============================================================================
+  - name: train-genetic-algorithms-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/genetic_algorithms/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-genetic-algorithms-config
+          path: /data/config/training_genetic_algorithms.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/genetic_algorithms_model.pkl
+    limits: {}
+
+  - name: generate-genetic-algorithms-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/genetic-algorithms/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/genetic_algorithms_model.pkl
+        - name: generation-genetic-algorithms-config
+          path: /data/config/generation_genetic_algorithms.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_genetic_algorithms_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Kernel Density Estimators
+  # ============================================================================
+  - name: train-kernel-density-estimators-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/kernel_density_estimators/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-kernel-density-estimators-config
+          path: /data/config/training_kernel_density_estimators.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/kernel_density_estimators_model.pkl
+    limits: {}
+
+  - name: generate-kernel-density-estimators-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/kernel_density_estimators/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/kernel_density_estimators_model.pkl
+        - name: generation-kernel-density-estimators-config
+          path: /data/config/generation_kernel_density_estimators.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_kernel_density_estimators_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Sparse Coding
+  # ============================================================================
+  - name: train-sparse-coding-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/sparse_coding/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-sparse-coding-config
+          path: /data/config/training_sparse_coding.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/sparse_coding_model.pkl
+    limits: {}
+
+  - name: generate-sparse-coding-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/sparse_coding/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/sparse_coding_model.pkl
+        - name: generation-sparse-coding-config
+          path: /data/config/generation_sparse_coding.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_sparse_coding_model.csv
+    limits: {}
+
+  # ============================================================================
+  # Variational Autoencoders (VAE)
+  # ============================================================================
+  - name: train-variational-autoencoders-model
+    type: training
+    version: v1
+    parameters: [params]
+    parameters_file: components/training/variational_autoencoders/variables.json
+    artifacts:
+      inputs:
+        - name: processed-data
+          path: /data/inputs/preprocessed_input.csv
+        - name: training-variational-autoencoders-config
+          path: /data/config/training_variational_autoencoders.json
+      outputs:
+        - name: trained-model
+          path: /data/outputs/vae_model.pkl
+    limits: {}
+
+  - name: generate-variational-autoencoders-data
+    type: generation
+    version: v1
+    parameters: [params]
+    parameters_file: components/generation/variational_autoencoders/variables.json
+    artifacts:
+      inputs:
+        - name: trained-model
+          path: /data/inputs/vae_model.pkl
+        - name: generation-variational-autoencoders-config
+          path: /data/config/generation_variational_autoencoders.json
+      outputs:
+        - name: synthetic-data
+          path: /data/outputs/synthetic_vae_model.csv
+    limits: {}
+
   - name: train-gym-pybullet-rl
     type: training
     version: v1

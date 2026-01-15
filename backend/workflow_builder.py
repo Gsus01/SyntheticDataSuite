@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
@@ -12,6 +13,8 @@ import os
 
 import yaml
 from pydantic import BaseModel, Field  # type: ignore[import-not-found]
+
+logger = logging.getLogger(__name__)
 
 from minio_helper import (
     build_session_node_prefix,
@@ -337,6 +340,18 @@ def _assign_bindings(
         if not source_outputs or not target_inputs:
             continue
 
+        # Helper to add dependency when a binding is created from a non-input source
+        def add_dependency_if_needed() -> None:
+            if not source_plan.is_input and source_plan.slug not in target_plan.dependencies:
+                target_plan.dependencies.append(source_plan.slug)
+                logger.debug(
+                    "Added dependency: %s -> %s (target %s depends on source %s)",
+                    source_plan.slug,
+                    target_plan.slug,
+                    target_plan.node_id,
+                    source_plan.node_id,
+                )
+
         # Try to honor explicit handles first.
         handle_source_artifact = _match_artifact_by_handle(edge.source_handle, source_plan.outputs)
         handle_target_input = _match_input_by_handle(edge.target_handle, target_inputs)
@@ -352,6 +367,7 @@ def _assign_bindings(
                     bucket=chosen_artifact.bucket,
                     key=chosen_artifact.key,
                 )
+                add_dependency_if_needed()
                 continue
 
         if handle_source_artifact:
@@ -370,6 +386,7 @@ def _assign_bindings(
                     bucket=handle_source_artifact.bucket,
                     key=handle_source_artifact.key,
                 )
+                add_dependency_if_needed()
                 continue
 
         # Greedy match by name intersection next.
@@ -403,8 +420,8 @@ def _assign_bindings(
                 key=artifact.key,
             )
 
-        if not source_plan.is_input and source_plan.slug not in target_plan.dependencies:
-            target_plan.dependencies.append(source_plan.slug)
+        # Add dependency for greedy/fallback bindings
+        add_dependency_if_needed()
 
     # Apply bindings to node plans
     for target_id, bindings in bindings_per_target.items():
@@ -490,6 +507,16 @@ def build_workflow_plan(payload: WorkflowGraphPayload) -> WorkflowPlan:
         plans[node.id] = plan
 
     _assign_bindings(plans, payload.edges)
+
+    # Log final dependencies for debugging
+    for plan in plans.values():
+        if not plan.is_input and not plan.is_output and plan.dependencies:
+            logger.info(
+                "Node '%s' (slug=%s) dependencies: %s",
+                plan.node_id,
+                plan.slug,
+                plan.dependencies,
+            )
 
     return WorkflowPlan(
         session_id=payload.session_id,
