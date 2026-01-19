@@ -6,6 +6,7 @@ set -euo pipefail
 #   scripts/dev/k8s-down.sh            # remove both namespaces
 #   scripts/dev/k8s-down.sh --only argo
 #   scripts/dev/k8s-down.sh --only minio
+#   scripts/dev/k8s-down.sh --only db
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -41,6 +42,7 @@ should_do() {
 
 "$ROOT_DIR/scripts/dev/port-forward.sh" stop --only minio || true
 "$ROOT_DIR/scripts/dev/port-forward.sh" stop --only argo  || true
+"$ROOT_DIR/scripts/dev/port-forward.sh" stop --only db   || true
 
 if should_do argo; then
   info "Eliminando namespace argo..."
@@ -50,6 +52,11 @@ fi
 if should_do minio; then
   info "Eliminando namespace minio-dev..."
   kc delete namespace minio-dev --ignore-not-found
+fi
+
+if should_do db; then
+  info "Eliminando PostgreSQL (syntheticdata namespace)..."
+  kc delete -n syntheticdata -f "$ROOT_DIR/deploy/postgres/postgres.yaml" --ignore-not-found
 fi
 
 info "k8s-down finalizado."

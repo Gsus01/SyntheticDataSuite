@@ -52,6 +52,16 @@ spec:
                 secretKeyRef:
                   name: backend-secrets
                   key: MINIO_SECRET_KEY
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: DATABASE_URL
+            - name: RUN_MIGRATIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: backend-config
+                  key: RUN_MIGRATIONS
           
           # Resource limits
           resources:

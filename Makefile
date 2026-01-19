@@ -1,4 +1,4 @@
-.PHONY: dev k8s-up k8s-up-minio k8s-up-argo k8s-down k8s-down-minio k8s-down-argo port-forward port-forward-stop port-forward-status backend frontend workflow k8s-deploy k8s-stop k8s-rebuild
+.PHONY: dev k8s-up k8s-up-minio k8s-up-argo k8s-up-db k8s-down k8s-down-minio k8s-down-argo k8s-down-db port-forward port-forward-stop port-forward-status backend frontend workflow k8s-deploy k8s-stop k8s-rebuild
 
 # =============================================================================
 # Development (local, without containers)
@@ -40,6 +40,9 @@ k8s-up-minio:
 k8s-up-argo:
 	./scripts/dev/k8s-up.sh --only argo
 
+k8s-up-db:
+	./scripts/dev/k8s-up.sh --only db
+
 k8s-down:
 	./scripts/dev/k8s-down.sh
 
@@ -48,6 +51,9 @@ k8s-down-minio:
 
 k8s-down-argo:
 	./scripts/dev/k8s-down.sh --only argo
+
+k8s-down-db:
+	./scripts/dev/k8s-down.sh --only db
 
 # =============================================================================
 # Port forwarding (for MinIO/Argo access)

@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Manage port-forward sessions for MinIO and Argo with simple status tracking
 # Usage:
-#   scripts/dev/port-forward.sh start [--only minio|argo]
-#   scripts/dev/port-forward.sh stop  [--only minio|argo]
+#   scripts/dev/port-forward.sh start [--only minio|argo|db]
+#   scripts/dev/port-forward.sh stop  [--only minio|argo|db]
 #   scripts/dev/port-forward.sh status
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -81,7 +81,7 @@ stop_pf() {
 }
 
 status_pf() {
-  for name in minio argo; do
+  for name in minio argo db; do
     local pidf="$STATE_DIR/$name.pid"
     if [[ -f "$pidf" ]] && ps -p "$(cat "$pidf")" >/dev/null 2>&1; then
       echo "$name: running (PID $(cat "$pidf"))"
@@ -95,16 +95,18 @@ case "$ACTION" in
   start)
     if should_do minio; then start_pf minio minio-dev pod/minio "9000:9000 9090:9090"; fi
     if should_do argo;  then start_pf argo  argo      deployment/argo-server "2746:2746"; fi
+    if should_do db;    then start_pf db    syntheticdata statefulset/postgres "5432:5432"; fi
     ;;
   stop)
     if should_do minio; then stop_pf minio; fi
     if should_do argo;  then stop_pf argo;  fi
+    if should_do db;    then stop_pf db;    fi
     ;;
   status)
     status_pf
     ;;
   *)
-    echo "Uso: $0 {start|stop|status} [--only minio|argo]" >&2
+    echo "Uso: $0 {start|stop|status} [--only minio|argo|db]" >&2
     exit 1
     ;;
 esac

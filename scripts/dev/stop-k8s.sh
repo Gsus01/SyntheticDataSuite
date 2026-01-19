@@ -18,6 +18,7 @@ fi
 
 info "Eliminando recursos de syntheticdata..."
 $KUBECTL delete -f "$ROOT_DIR/deploy/k8s/" 2>/dev/null || true
+$KUBECTL delete -n syntheticdata -f "$ROOT_DIR/deploy/postgres/postgres.yaml" 2>/dev/null || true
 
 info ""
 info "✓ Aplicación detenida"

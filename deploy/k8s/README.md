@@ -4,11 +4,17 @@ This directory contains Kubernetes manifests to deploy the SyntheticDataSuite ba
 
 ## Prerequisites
 
-1. **minikube** running with Argo Workflows and MinIO already deployed
+1. **minikube** running with Argo Workflows, MinIO, and PostgreSQL already deployed
 2. **kubectl** configured to access the cluster
 3. Docker images built in minikube's Docker daemon
 
 ## Quick Start (Recommended: With Ingress)
+
+### 0. Deploy dependencies (MinIO, Argo, Postgres)
+
+```bash
+./scripts/dev/k8s-up.sh
+```
 
 The recommended setup uses an **Ingress** to serve both frontend and backend under the same domain. This avoids CORS issues and simplifies the architecture.
 
@@ -154,6 +160,8 @@ Open http://localhost:3000
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `DATABASE_URL` | Postgres connection string | `postgresql+psycopg://syntheticdata:syntheticdata@postgres.syntheticdata.svc.cluster.local:5432/syntheticdata` |
+| `RUN_MIGRATIONS` | Create registry tables on startup | `true` |
 | `MINIO_ENDPOINT` | MinIO server address | `minio.minio-dev.svc.cluster.local:9000` |
 | `MINIO_ACCESS_KEY` | MinIO access key | (from secret) |
 | `MINIO_SECRET_KEY` | MinIO secret key | (from secret) |
