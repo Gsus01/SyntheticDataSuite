@@ -74,18 +74,20 @@ docker build -t preprocessing:${TAG} components/preprocessing
 # Construir imágenes de todos los modelos en generation
 for dir in components/generation/*/; do
   if [ -f "$dir/Dockerfile" ]; then
-    name=$(basename "$dir")
-    echo "Construyendo imagen: generation-$name:${TAG}"
-    docker build -t generation-$name:${TAG} "$dir"
+  name=$(basename "$dir")
+  image_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+  echo "Construyendo imagen: generation-$image_name:${TAG}"
+  docker build -t generation-$image_name:${TAG} "$dir"
   fi
 done
 
 # Construir imágenes de todos los modelos en training
 for dir in components/training/*/; do
   if [ -f "$dir/Dockerfile" ]; then
-    name=$(basename "$dir")
-    echo "Construyendo imagen: training-$name:${TAG}"
-    docker build -t training-$name:${TAG} "$dir"
+  name=$(basename "$dir")
+  image_name=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+  echo "Construyendo imagen: training-$image_name:${TAG}"
+  docker build -t training-$image_name:${TAG} "$dir"
   fi
 done
 

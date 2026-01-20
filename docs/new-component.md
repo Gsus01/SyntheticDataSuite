@@ -154,145 +154,153 @@ When deployed to the cluster, the system will simply run `python main.py`, and t
 
 ---
 
-## 🔧 Repository Integration
+## 🔧 Registry Integration (DB-backed)
 
-Once your container is ready, you need to register it in the repository so that the workflow engine and frontend can use it.
+The component catalog is now dynamic: components are registered at runtime via API and stored in PostgreSQL.
 
-### Files to Modify
+Key ideas:
+- You register one **ComponentSpec** (a JSON object) per component version.
+- The backend stores the spec in Postgres (tables `components` and `component_versions`).
+- The UI loads the catalog from the backend (GET `/workflow-templates`). There are no YAML files to edit.
+- By default the system uses the **active** version (active/latest) for each component.
 
-| File | Purpose |
-| :--- | :------ |
-| `backend/catalog/nodes.yaml` | Registers the node in the UI palette |
-| `backend/workflow-templates.yaml` | Defines the Argo WorkflowTemplate for execution |
-| `components/{type}/{name}/variables.json` | Parameters schema for the frontend form |
-| `build_all.sh` | (Optional) Add Docker build command |
+### 1) What you need to prepare
 
-### Step 1: Add to Node Catalog
+- A Docker image for your component (image names must be lowercase; Docker rejects uppercase).
+- A ComponentSpec (you can author it in YAML for convenience, but you register it by sending JSON to the API).
 
-Edit `backend/catalog/nodes.yaml` to add your new node. This makes it appear in the frontend canvas.
+### 2) ComponentSpec fields and meaning
 
-```yaml
-# backend/catalog/nodes.yaml
-nodes:
-  # ... existing nodes ...
+Required fields (minimum viable):
+- `apiVersion`: `sds/v1`
+- `kind`: `Component`
+- `metadata.name`: component identifier (unique; kebab-case recommended)
+- `metadata.version`: version (e.g. `v1`, `1.0.0`, etc.)
+- `metadata.type`: `input | preprocessing | training | generation | output | other`
+- `io.inputs[]` and `io.outputs[]`: ports/artifacts with `name`, `path` and optional `role`
+- `runtime.image`: Docker image to run
+- `runtime.command`/`runtime.args`: how to run it (if your Dockerfile already defines `CMD`, you can omit `command/args`)
 
-  - name: train-my-model          # Unique identifier (kebab-case)
-    type: training                # One of: input, preprocessing, training, generation, output
-    version: v2
-    parameters: [params]          # Parameter groups
-    parameters_file: components/training/my_model/variables.json
-    artifacts:
-      inputs:
-        - name: processed-data
-          path: /data/inputs/preprocessed_input.csv
-        - name: training-my-model-config
-          path: /data/config/training_my_model.json
-      outputs:
-        - name: trained-model
-          path: /data/outputs/my_model.pkl
-    limits: {}
-```
+About `io.*.role`:
+- `role: config` means this input is a config file (not connectable in the canvas; the system generates it from `parameters.defaults`).
+- `role: data` (default) means a connectable artifact.
 
-### Step 2: Add Workflow Template
+About `parameters.defaults`:
+- A JSON object with default values shown in the inspector.
+- At this stage we are not using JSON Schema; it is defaults only.
 
-Edit `backend/workflow-templates.yaml` to define how Argo runs your container.
-
-```yaml
-# backend/workflow-templates.yaml
-templates:
-  # ... existing templates ...
-
-  train-my-model:
-    inputs:
-      artifacts:
-        - name: processed-data
-          path: /data/inputs/preprocessed_input.csv
-          archive:
-            none: {}
-        - name: training-my-model-config
-          path: /data/config/training_my_model.json
-    container:
-      image: docker.io/library/training-my_model:latest
-      imagePullPolicy: Never      # Use 'Always' for remote registries
-      command: [python, main.py]
-    outputs:
-      artifacts:
-        - name: trained-model
-          path: /data/outputs/my_model.pkl
-          archive:
-            none: {}
-```
-
-### Step 3: Create Parameters Schema
-
-Create `components/{type}/{name}/variables.json` to define the configurable parameters.
+### 3) Minimal example (1 input, 1 config, 1 output)
 
 ```json
 {
-  "n_samples": {
-    "type": "integer",
-    "default": 1000,
-    "description": "Number of samples to generate"
+  "apiVersion": "sds/v1",
+  "kind": "Component",
+  "metadata": {
+    "name": "train-my-model",
+    "version": "v1",
+    "type": "training",
+    "title": "Train My Model"
   },
-  "learning_rate": {
-    "type": "number",
-    "default": 0.01,
-    "description": "Model learning rate"
+  "io": {
+    "inputs": [
+      {"name": "processed-data", "path": "/data/inputs/preprocessed_input.csv", "role": "data"},
+      {"name": "training-config", "path": "/data/config/training.json", "role": "config"}
+    ],
+    "outputs": [
+      {"name": "trained-model", "path": "/data/outputs/model.pkl", "role": "model"}
+    ]
   },
-  "model_type": {
-    "type": "string",
-    "default": "standard",
-    "enum": ["standard", "advanced"],
-    "description": "Type of model to train"
+  "runtime": {
+    "image": "docker.io/library/training-my_model:latest",
+    "imagePullPolicy": "Never",
+    "command": ["python", "main.py"]
+  },
+  "parameters": {
+    "defaults": {
+      "epochs": 10,
+      "seed": 123
+    }
   }
 }
 ```
 
-### Step 4: Build the Docker Image
+### 4) Register the component (API)
 
-Add your image to `build_all.sh` or build manually:
+Endpoint payload:
+- `spec`: the full ComponentSpec
+- `activate`: if `true`, this version becomes the active (latest) version
 
 ```bash
-# Manual build
-docker build -t training-my_model:latest ./components/training/my_model/
-
-# Or add to build_all.sh
-docker build -t training-my_model:latest ./components/training/my_model/
+curl -X POST http://localhost:8000/components \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "spec": {
+      "apiVersion": "sds/v1",
+      "kind": "Component",
+      "metadata": {"name": "train-my-model", "version": "v1", "type": "training", "title": "Train My Model"},
+      "io": {
+        "inputs": [
+          {"name": "processed-data", "path": "/data/inputs/preprocessed_input.csv", "role": "data"},
+          {"name": "training-config", "path": "/data/config/training.json", "role": "config"}
+        ],
+        "outputs": [
+          {"name": "trained-model", "path": "/data/outputs/model.pkl", "role": "model"}
+        ]
+      },
+      "runtime": {"image": "docker.io/library/training-my_model:latest", "imagePullPolicy": "Never", "command": ["python", "main.py"]},
+      "parameters": {"defaults": {"epochs": 10}}
+    },
+    "activate": true
+  }'
 ```
+
+### 5) Activate another version (active/latest)
+
+```bash
+curl -X POST http://localhost:8000/components/train-my-model/v2/activate
+```
+
+### 6) Verify it is registered
+
+```bash
+curl http://localhost:8000/components
+curl http://localhost:8000/workflow-templates
+```
+
+- `GET /components` lists components and their `activeVersion`.
+- `GET /workflow-templates` is what the UI consumes to display the catalog.
 
 ### Naming Conventions
 
 | Element | Convention | Example |
 | :------ | :--------- | :------ |
-| Node name | `{action}-{model}-{type}` | `train-hmm-model`, `generate-copulas-data` |
-| Image name | `{type}-{model}:latest` | `training-hmm:latest`, `generation-copulas:latest` |
-| Config artifact | `{action}-{model}-config` | `training-hmm-config` |
+| Component name | kebab-case | `train-hmm-model`, `generate-copulas-data` |
+| Image name | lowercase, no spaces | `training-hmm:latest`, `generation-copulas:latest` |
+| Config artifact | `{something}-config` | `training-hmm-config` |
 | Directory | `components/{type}/{model}/` | `components/training/hmm/` |
 
 ---
 
 ## 📝 Integration Checklist
 
-Before submitting a new component, verify:
+**Container Requirements**
 
-**Container Requirements:**
+- [ ] Script accepts `--input-dir` and `--output-dir` with defaults `/data/inputs` and `/data/outputs`
+- [ ] Writes all outputs to `/data/outputs`
+- [ ] If using config, reads from `/data/config`
+- [ ] Dockerfile does not hardcode runtime paths (use `CMD ["python", "main.py"]` or equivalent)
 
-- [ ] Script accepts `--input-dir` and `--output-dir` arguments
-- [ ] Defaults are set to `/data/inputs` and `/data/outputs`
-- [ ] Uses **Strategy A** (fixed names) or **Strategy B** (glob) for inputs
-- [ ] Dockerfile `CMD` runs the script without hardcoded flags
-- [ ] `requirements.txt` is included and minimal
+**Registry Requirements**
 
-**Repository Integration:**
+- [ ] `metadata.name` is unique and stable
+- [ ] `metadata.version` increments when the contract changes
+- [ ] `io.inputs[].path` and `io.outputs[].path` match what your container actually reads/writes
+- [ ] `runtime.image` exists in minikube/cluster (and is lowercase)
+- [ ] Registered via `POST /components` and visible in `GET /workflow-templates`
 
-- [ ] Node added to `backend/catalog/nodes.yaml`
-- [ ] Template added to `backend/workflow-templates.yaml`
-- [ ] `variables.json` created with parameter schema
-- [ ] Docker image builds successfully
-- [ ] Artifact paths match between catalog and template
+**Smoke test**
 
-**Testing:**
+- [ ] Appears in the canvas
+- [ ] You can upload a file using `data-input`
+- [ ] The workflow compiles and runs in Argo
 
-- [ ] Container runs locally with test data
-- [ ] Node appears in frontend canvas
-- [ ] Workflow executes successfully in Argo

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Orchestrate dev stack: k8s (minio/argo), port-forwards, backend, frontend
+# Orchestrate dev stack: k8s (minio/argo/db), port-forwards, backend, frontend
 # Flags:
 #   --skip-k8s       no k8s setup
 #   --skip-pf        no port-forwards
@@ -45,12 +45,12 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ "$DO_K8S" -eq 1 ]]; then
-  info "Levantando Kubernetes (MinIO/Argo)..."
+  info "Levantando Kubernetes (MinIO/Argo/DB)..."
   "$ROOT_DIR/scripts/dev/k8s-up.sh"
 fi
 
 if [[ "$DO_PF" -eq 1 ]]; then
-  info "Abriendo port-forwards (MinIO/Argo)..."
+  info "Abriendo port-forwards (MinIO/Argo/DB)..."
   "$ROOT_DIR/scripts/dev/port-forward.sh" start
 fi
 
@@ -64,6 +64,10 @@ if [[ "$DO_BACKEND" -eq 1 ]]; then
   export MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
   export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
   export MINIO_SECURE="${MINIO_SECURE:-0}"
+
+  # DB (Postgres) defaults for local dev via port-forward
+  export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg://syntheticdata:syntheticdata@localhost:5432/syntheticdata}"
+  export RUN_MIGRATIONS="${RUN_MIGRATIONS:-true}"
 
   # Sync de dependencias desde pyproject/uv.lock y lanzamiento con uv
   uv sync --project "$ROOT_DIR/backend"

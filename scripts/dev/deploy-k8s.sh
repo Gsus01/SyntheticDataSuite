@@ -74,7 +74,7 @@ enable_ingress() {
 # Deploy MinIO and Argo (using existing scripts)
 # -----------------------------------------------------------------------------
 deploy_dependencies() {
-  info "Desplegando MinIO y Argo..."
+  info "Desplegando MinIO, Argo y DB..."
   "$ROOT_DIR/scripts/dev/k8s-up.sh"
 }
 

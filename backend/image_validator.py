@@ -7,14 +7,12 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-import yaml
+from db import db_session
+from component_registry import ComponentRegistry
 
 logger = logging.getLogger(__name__)
-
-_TEMPLATE_REGISTRY_PATH = Path(__file__).resolve().parent / "workflow-templates.yaml"
 
 
 def _should_skip_validation() -> bool:
@@ -133,25 +131,28 @@ def _list_minikube_images_via_ssh() -> Set[str]:
 
 
 def get_all_template_images() -> Dict[str, str]:
-    """Get all images defined in workflow-templates.yaml.
+    """Get all images defined in the active component registry.
 
     Returns:
         Dict mapping template name to image name.
     """
-    if not _TEMPLATE_REGISTRY_PATH.exists():
-        return {}
+    images: Dict[str, str] = {}
 
-    with _TEMPLATE_REGISTRY_PATH.open("r", encoding="utf-8") as fh:
-        raw = yaml.safe_load(fh) or {}
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            for component in registry.list_components():
+                if not component.active_version:
+                    continue
+                version = registry.get_version(component.name, component.active_version)
+                if not version:
+                    continue
+                if version.runtime_image:
+                    images[component.name] = version.runtime_image
+    except Exception as exc:
+        logger.warning("Failed to read registry images: %s", exc)
 
-    templates = raw.get("templates") or {}
-    result = {}
-    for name, body in templates.items():
-        container = body.get("container") or {}
-        image = container.get("image")
-        if image:
-            result[name] = image
-    return result
+    return images
 
 
 def validate_images(template_names: List[str]) -> ImageValidationResult:
@@ -218,7 +219,7 @@ def validate_images(template_names: List[str]) -> ImageValidationResult:
 
 
 def validate_all_images() -> ImageValidationResult:
-    """Validate all images defined in workflow-templates.yaml."""
+    """Validate all images defined in the registry."""
     all_images = get_all_template_images()
     return validate_images(list(all_images.keys()))
 

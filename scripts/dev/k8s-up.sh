@@ -3,9 +3,10 @@ set -euo pipefail
 
 # Simple, verbose dev helper to bring up MinIO and/or Argo on minikube
 # Usage examples:
-#   scripts/dev/k8s-up.sh               # bring up all (minio + argo)
+#   scripts/dev/k8s-up.sh               # bring up all (minio + argo + db)
 #   scripts/dev/k8s-up.sh --only minio  # only minio
 #   scripts/dev/k8s-up.sh --only argo   # only argo
+#   scripts/dev/k8s-up.sh --only db     # only postgres (component registry DB)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROFILE="${MINIKUBE_PROFILE:-minikube}"
@@ -42,6 +43,15 @@ should_do() {
   local comp="$1"
   if [[ -z "$ONLY_COMPONENT" ]]; then return 0; fi
   [[ "$ONLY_COMPONENT" == "$comp" ]]
+}
+
+deploy_db() {
+  info "Aplicando manifests de PostgreSQL..."
+  kc apply -f "$ROOT_DIR/deploy/k8s/namespace.yaml"
+  kc apply -f "$ROOT_DIR/deploy/postgres/postgres.yaml"
+
+  info "Esperando a que PostgreSQL esté listo..."
+  kc -n syntheticdata rollout status statefulset/postgres --timeout=180s
 }
 
 ensure_minikube() {
@@ -101,8 +111,13 @@ main() {
     deploy_argo
   fi
 
+  # Default behavior: bring up the DB as part of the full stack
+  if should_do db || [[ -z "$ONLY_COMPONENT" ]]; then
+    deploy_db
+  fi
+
   if [[ -z "$ONLY_COMPONENT" ]]; then
-    info "Despliegue completo (MinIO + Argo) finalizado."
+    info "Despliegue completo (MinIO + Argo + DB) finalizado."
   else
     info "Despliegue de componente '$ONLY_COMPONENT' finalizado."
   fi

@@ -22,7 +22,7 @@ Antes de empezar, asegúrate de tener instalados:
 ```bash
 make dev
 ```
-Arranca: MinIO + Argo en minikube, abre los puertos (9090/9000 para MinIO, 2746 para Argo) y lanza frontend (3000) y backend (8000).
+Arranca: MinIO + Argo + Postgres en minikube, abre los puertos (9090/9000 para MinIO, 2746 para Argo, 5432 para DB) y lanza frontend (3000) y backend (8000).
 
 ---
 
@@ -35,9 +35,10 @@ Todos los scripts están en `scripts/dev/`.
 - Sólo un componente:
   - `./scripts/dev/k8s-up.sh --only minio`
   - `./scripts/dev/k8s-up.sh --only argo`
+  - `./scripts/dev/k8s-up.sh --only db`
 - Comportamiento:
   - Arranca minikube si no está corriendo (perfil configurable con `MINIKUBE_PROFILE`)
-  - Aplica manifests de MinIO y/o Argo
+  - Aplica manifests de MinIO, Argo y Postgres (DB)
   - Ajusta Argo para `--auth-mode=server` (modo dev)
   - Espera a que los deployments estén listos
   - Si `kubectl` no existe en el PATH, usa automáticamente `minikube kubectl --`
@@ -47,15 +48,18 @@ Todos los scripts están en `scripts/dev/`.
 - Sólo un componente:
   - `./scripts/dev/k8s-down.sh --only minio`
   - `./scripts/dev/k8s-down.sh --only argo`
+  - `./scripts/dev/k8s-down.sh --only db`
 
 3) `port-forward.sh` — gestionar port-forwards y estados
 - Estado: `./scripts/dev/port-forward.sh status`
 - Iniciar:
   - `./scripts/dev/port-forward.sh start`
   - Selectivo: `./scripts/dev/port-forward.sh start --only argo`
+  - Selectivo: `./scripts/dev/port-forward.sh start --only db`
 - Parar:
   - `./scripts/dev/port-forward.sh stop`
   - Selectivo: `./scripts/dev/port-forward.sh stop --only minio`
+  - Selectivo: `./scripts/dev/port-forward.sh stop --only db`
 - Guarda PIDs y logs en `.tmp/dev/`
 - Usa el mismo fallback a `minikube kubectl --` si `kubectl` no está disponible directamente
 
@@ -71,6 +75,7 @@ Todos los scripts están en `scripts/dev/`.
   - `--only-frontend`
 - Se cierra con `Ctrl+C` (hace cleanup de port-forwards)
 - Arranca el backend con `uvicorn main:app` estableciendo `PYTHONPATH` hacia `backend/`
+- Exporta `DATABASE_URL` y `RUN_MIGRATIONS` para el registry de componentes
 
 ---
 
@@ -78,13 +83,15 @@ Todos los scripts están en `scripts/dev/`.
 
 ```bash
 make dev                 # orquesta todo
-make k8s-up              # sube MinIO + Argo
+make k8s-up              # sube MinIO + Argo + DB
 make k8s-up-minio        # sólo MinIO
 make k8s-up-argo         # sólo Argo
-make k8s-down            # elimina ambos namespaces
+make k8s-up-db           # sólo DB
+make k8s-down            # elimina namespaces (MinIO/Argo) y DB
 make k8s-down-minio      # sólo minio-dev
 make k8s-down-argo       # sólo argo
-make port-forward        # abre PF (MinIO/Argo)
+make k8s-down-db         # sólo DB
+make port-forward        # abre PF (MinIO/Argo/DB)
 make port-forward-stop   # cierra PF
 make port-forward-status # estado PF
 make backend             # sólo backend (8000)
@@ -98,6 +105,7 @@ make workflow            # envía workflow de ejemplo a Argo
 - MinIO API: `http://localhost:9000`
 - MinIO Console: `http://localhost:9090`
 - Argo UI: `https://localhost:2746`
+- Postgres: `localhost:5432`
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
 
@@ -106,6 +114,8 @@ make workflow            # envía workflow de ejemplo a Argo
 ### Variables útiles
 - `MINIKUBE_PROFILE` — perfil de minikube (por defecto `minikube`)
 - `K8S_CONTEXT` — contexto de kubectl (por defecto `minikube`)
+- `DATABASE_URL` — conexión a Postgres (ej. `postgresql+psycopg://syntheticdata:syntheticdata@localhost:5432/syntheticdata`)
+- `RUN_MIGRATIONS` — crea tablas del registry al iniciar (`true`/`false`)
 
 Ejemplo:
 ```bash
@@ -115,7 +125,7 @@ MINIKUBE_PROFILE=devbox K8S_CONTEXT=minikube \
 
 ### Backend, MinIO y Argo CLI
 
-El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y ahora también para guardar el manifiesto del workflow antes de enviarlo a Argo. Las variables más importantes relacionadas con MinIO son:
+El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y para guardar el manifiesto del workflow antes de enviarlo a Argo. Las definiciones de workflows ahora se guardan en PostgreSQL. Las variables más importantes relacionadas con MinIO son:
 
 - `MINIO_ENDPOINT` — endpoint del servicio S3 (por defecto `localhost:9000`)
 - `MINIO_ACCESS_KEY` — access key obligatoria
@@ -160,7 +170,7 @@ El editor (`frontend`) envía el flujo directamente a Argo usando el botón **En
 
 Además, el editor dispone ahora de una terminal inferior plegable que se abre automáticamente tras cada envío y durante la ejecución. Los pods continúan archivando sus logs en MinIO, pero la interfaz los obtiene en tiempo (casi) real consultando la API de Argo (`GET /workflow/logs/stream`), que recibe el `workflowName`, un cursor Base64 incremental y parámetros opcionales como `namespace`, `tailLines` o `container`.
 
-> **Nota:** Los `templateRef` del YAML apuntan a plantillas nombradas igual que los nodos del catálogo. Asegúrate de que esas plantillas estén registradas en tu clúster (o ajusta el YAML antes de enviarlo a Argo).
+> **Nota:** El backend genera plantillas embebidas para cada nodo del catálogo, así que no necesitas WorkflowTemplates registradas en el clúster.
 
 #### Seguimiento de estado con la API de Argo Server
 

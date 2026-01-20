@@ -5,6 +5,7 @@ import type { FlowNodePorts, NodeArtifactPort } from "@/types/flow";
 export type CatalogArtifact = {
   name: string;
   path?: string | null;
+  role?: string | null;
 };
 
 export type CatalogArtifacts = {
@@ -25,6 +26,7 @@ export type CatalogNodeTemplate = {
 const CONFIG_EXTENSIONS = [".yaml", ".yml", ".json"];
 
 export function isConfigArtifact(spec: CatalogArtifact): boolean {
+  if (spec.role && spec.role.toLowerCase() === "config") return true;
   const name = (spec.name || "").toLowerCase();
   const path = (spec.path || "").toLowerCase();
   if (name === "processed-data") return false;

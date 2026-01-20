@@ -6,8 +6,8 @@ import json
 import logging
 from collections import defaultdict
 from copy import deepcopy
+from typing import Any, Dict, List, Optional, cast
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import os
 
@@ -23,7 +23,11 @@ from minio_helper import (
     sanitize_path_segment,
     upload_bytes,
 )
-from catalog_loader import ArtifactSpec, NodeTemplate, load_catalog
+from catalog_loader import ArtifactSpec, NodeTemplate
+from catalog_adapter import components_to_catalog
+from component_registry import ComponentRegistry
+from db import db_session
+from component_spec import ComponentSpec
 
 
 SERVICE_ACCOUNT_NAME = os.getenv("ARGO_SERVICE_ACCOUNT", "default")
@@ -39,16 +43,7 @@ def _sanitize_label_value(value: str, fallback: str) -> str:
     return candidate
 
 
-_TEMPLATE_REGISTRY_PATH = Path(__file__).resolve().parent / "workflow-templates.yaml"
-if not _TEMPLATE_REGISTRY_PATH.exists():
-    raise FileNotFoundError(
-        f"Workflow templates registry not found at {_TEMPLATE_REGISTRY_PATH}"
-    )
-with _TEMPLATE_REGISTRY_PATH.open("r", encoding="utf-8") as fh:
-    _raw_registry = yaml.safe_load(fh) or {}
-_WORKFLOW_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
-    name: body for name, body in (_raw_registry.get("templates") or {}).items()
-}
+_WORKFLOW_TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {}
 
 
 class NodeArtifactPayload(BaseModel):
@@ -131,7 +126,11 @@ class WorkflowPlan(BaseModel):
     nodes: Dict[str, NodePlan]
 
     def tasks(self) -> List[NodePlan]:
-        return [plan for plan in self.nodes.values() if not plan.is_input and not plan.is_output]
+        return [
+            plan
+            for plan in self.nodes.values()
+            if not plan.is_input and not plan.is_output
+        ]
 
 
 class WorkflowBuilderError(RuntimeError):
@@ -147,7 +146,17 @@ class MissingArtifactError(WorkflowBuilderError):
 
 
 def _index_catalog() -> Dict[str, NodeTemplate]:
-    catalog = load_catalog()
+    with db_session() as session:
+        registry = ComponentRegistry(session)
+        specs: List[ComponentSpec] = []
+        for component in registry.list_components():
+            if not component.active_version:
+                continue
+            spec = registry.resolve_active_spec(component.name)
+            if spec:
+                specs.append(spec)
+
+    catalog = components_to_catalog(specs)
     return {template.name: template for template in catalog}
 
 
@@ -176,6 +185,8 @@ def _ensure_uploaded_artifact(node: FlowNodePayload) -> NodeArtifactPayload:
 
 
 def _is_config_artifact(spec: ArtifactSpec) -> bool:
+    if spec.role and spec.role.lower() == "config":
+        return True
     name = spec.name.lower()
     path = (spec.path or "").lower()
     if name == "processed-data":
@@ -184,12 +195,14 @@ def _is_config_artifact(spec: ArtifactSpec) -> bool:
         return True
     if "/config/" in path:
         return True
-    if path.endswith(('.yaml', '.yml', '.json')):
+    if path.endswith((".yaml", ".yml", ".json")):
         return True
     return False
 
 
-def _merge_parameters(defaults: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_parameters(
+    defaults: Dict[str, Any], overrides: Dict[str, Any]
+) -> Dict[str, Any]:
     result = deepcopy(defaults)
 
     def merge(dest: Dict[str, Any], source: Dict[str, Any]) -> None:
@@ -215,17 +228,19 @@ def _build_config_document(node: FlowNodePayload) -> Dict[str, Any]:
     return _merge_parameters(defaults_dict, overrides_dict)
 
 
-def _render_config_bytes(config: Dict[str, Any], spec: ArtifactSpec) -> tuple[bytes, str, str]:
+def _render_config_bytes(
+    config: Dict[str, Any], spec: ArtifactSpec
+) -> tuple[bytes, str, str]:
     target_path = (spec.path or "").lower()
-    if target_path.endswith(('.yaml', '.yml')):
+    if target_path.endswith((".yaml", ".yml")):
         rendered = yaml.safe_dump(config, sort_keys=False)
-        extension = '.yaml' if target_path.endswith('.yaml') else '.yml'
-        content_type = 'application/x-yaml'
+        extension = ".yaml" if target_path.endswith(".yaml") else ".yml"
+        content_type = "application/x-yaml"
     else:
         rendered = json.dumps(config, indent=2, ensure_ascii=False)
-        extension = '.json'
-        content_type = 'application/json'
-    return rendered.encode('utf-8'), content_type, extension
+        extension = ".json"
+        content_type = "application/json"
+    return rendered.encode("utf-8"), content_type, extension
 
 
 def _build_config_inputs(
@@ -235,7 +250,9 @@ def _build_config_inputs(
     node: FlowNodePayload,
     bucket: str,
 ) -> Dict[str, ArtifactPlan]:
-    relevant_specs = [spec for spec in template.artifacts.inputs if _is_config_artifact(spec)]
+    relevant_specs = [
+        spec for spec in template.artifacts.inputs if _is_config_artifact(spec)
+    ]
     if not relevant_specs:
         return {}
 
@@ -245,10 +262,16 @@ def _build_config_inputs(
     config_inputs: Dict[str, ArtifactPlan] = {}
 
     for spec in relevant_specs:
-        data_bytes, content_type, extension = _render_config_bytes(config_document, spec)
-        object_name = f"{prefix}/config/{sanitize_path_segment(spec.name, 'config')}{extension}"
+        data_bytes, content_type, extension = _render_config_bytes(
+            config_document, spec
+        )
+        object_name = (
+            f"{prefix}/config/{sanitize_path_segment(spec.name, 'config')}{extension}"
+        )
         upload_bytes(client, bucket, object_name, data_bytes, content_type=content_type)
-        workflow_input_name = sanitize_path_segment(f"{slug}-{spec.name}-config", spec.name)
+        workflow_input_name = sanitize_path_segment(
+            f"{slug}-{spec.name}-config", spec.name
+        )
         config_inputs[spec.name] = ArtifactPlan(
             name=spec.name,
             path=spec.path,
@@ -288,6 +311,10 @@ def _build_input_node_plan(
     artifact = _ensure_uploaded_artifact(node)
     outputs: Dict[str, ArtifactPlan] = {}
     for spec in template.artifacts.outputs:
+        if not artifact.key:
+            raise MissingArtifactError(
+                f"Input node '{node.id}' uploaded artifact missing key"
+            )
         outputs[spec.name] = ArtifactPlan(
             name=spec.name,
             path=spec.path,
@@ -297,7 +324,9 @@ def _build_input_node_plan(
     return outputs
 
 
-def _match_artifact_by_handle(handle: Optional[str], outputs: Dict[str, ArtifactPlan]) -> Optional[ArtifactPlan]:
+def _match_artifact_by_handle(
+    handle: Optional[str], outputs: Dict[str, ArtifactPlan]
+) -> Optional[ArtifactPlan]:
     if not handle:
         return None
     handle_normalized = handle.lower()
@@ -332,40 +361,57 @@ def _assign_bindings(
     for edge in edges:
         source_plan = plans.get(edge.source)
         target_plan = plans.get(edge.target)
-        if not source_plan or not target_plan or target_plan.is_input:
+        if source_plan is None or target_plan is None:
+            continue
+        if target_plan.is_input:
             continue
 
-        target_inputs = inputs_lookup.get(target_plan.node_id, [])
-        source_outputs = list(source_plan.outputs.values())
+        source_plan_t = cast(NodePlan, source_plan)
+        target_plan_t = cast(NodePlan, target_plan)
+
+        target_inputs = inputs_lookup.get(target_plan_t.node_id, [])
+        source_outputs = list(source_plan_t.outputs.values())
         if not source_outputs or not target_inputs:
             continue
 
         # Helper to add dependency when a binding is created from a non-input source
         def add_dependency_if_needed() -> None:
-            if not source_plan.is_input and source_plan.slug not in target_plan.dependencies:
-                target_plan.dependencies.append(source_plan.slug)
+            if (
+                not source_plan_t.is_input
+                and source_plan_t.slug not in target_plan_t.dependencies
+            ):
+                target_plan_t.dependencies.append(source_plan_t.slug)
                 logger.debug(
                     "Added dependency: %s -> %s (target %s depends on source %s)",
-                    source_plan.slug,
-                    target_plan.slug,
-                    target_plan.node_id,
-                    source_plan.node_id,
+                    source_plan_t.slug,
+                    target_plan_t.slug,
+                    target_plan_t.node_id,
+                    source_plan_t.node_id,
                 )
 
         # Try to honor explicit handles first.
-        handle_source_artifact = _match_artifact_by_handle(edge.source_handle, source_plan.outputs)
+        handle_source_artifact = _match_artifact_by_handle(
+            edge.source_handle, source_plan_t.outputs
+        )
         handle_target_input = _match_input_by_handle(edge.target_handle, target_inputs)
-        if handle_target_input and handle_target_input not in bindings_per_target[target_plan.node_id]:
-            chosen_artifact = handle_source_artifact or source_plan.outputs.get(handle_target_input)
+        if (
+            handle_target_input
+            and handle_target_input not in bindings_per_target[target_plan_t.node_id]
+        ):
+            chosen_artifact = handle_source_artifact or source_plan_t.outputs.get(
+                handle_target_input
+            )
             if not chosen_artifact and source_outputs:
                 chosen_artifact = source_outputs[0]
             if chosen_artifact:
-                bindings_per_target[target_plan.node_id][handle_target_input] = ArtifactBinding(
-                    input_name=handle_target_input,
-                    source_node_id=source_plan.node_id,
-                    source_artifact_name=chosen_artifact.name,
-                    bucket=chosen_artifact.bucket,
-                    key=chosen_artifact.key,
+                bindings_per_target[target_plan_t.node_id][handle_target_input] = (
+                    ArtifactBinding(
+                        input_name=handle_target_input,
+                        source_node_id=source_plan_t.node_id,
+                        source_artifact_name=chosen_artifact.name,
+                        bucket=chosen_artifact.bucket,
+                        key=chosen_artifact.key,
+                    )
                 )
                 add_dependency_if_needed()
                 continue
@@ -375,16 +421,53 @@ def _assign_bindings(
             preferred_input = _match_input_by_handle(edge.source_handle, target_inputs)
             if not preferred_input:
                 preferred_input = next(
-                    (name for name in target_inputs if name not in bindings_per_target[target_plan.node_id]),
+                    (
+                        name
+                        for name in target_inputs
+                        if name not in bindings_per_target[target_plan_t.node_id]
+                    ),
                     None,
                 )
-            if preferred_input and preferred_input not in bindings_per_target[target_plan.node_id]:
-                bindings_per_target[target_plan.node_id][preferred_input] = ArtifactBinding(
-                    input_name=preferred_input,
-                    source_node_id=source_plan.node_id,
-                    source_artifact_name=handle_source_artifact.name,
-                    bucket=handle_source_artifact.bucket,
-                    key=handle_source_artifact.key,
+            if (
+                preferred_input
+                and preferred_input not in bindings_per_target[target_plan_t.node_id]
+            ):
+                bindings_per_target[target_plan_t.node_id][preferred_input] = (
+                    ArtifactBinding(
+                        input_name=preferred_input,
+                        source_node_id=source_plan_t.node_id,
+                        source_artifact_name=handle_source_artifact.name,
+                        bucket=handle_source_artifact.bucket,
+                        key=handle_source_artifact.key,
+                    )
+                )
+                add_dependency_if_needed()
+                continue
+
+        if handle_source_artifact:
+            # Map source handle by name to matching input, or next available.
+            preferred_input = _match_input_by_handle(edge.source_handle, target_inputs)
+            if not preferred_input:
+                preferred_input = next(
+                    (
+                        name
+                        for name in target_inputs
+                        if name not in bindings_per_target[target_plan_t.node_id]
+                    ),
+                    None,
+                )
+            if (
+                preferred_input
+                and preferred_input not in bindings_per_target[target_plan_t.node_id]
+            ):
+                bindings_per_target[target_plan_t.node_id][preferred_input] = (
+                    ArtifactBinding(
+                        input_name=preferred_input,
+                        source_node_id=source_plan_t.node_id,
+                        source_artifact_name=handle_source_artifact.name,
+                        bucket=handle_source_artifact.bucket,
+                        key=handle_source_artifact.key,
+                    )
                 )
                 add_dependency_if_needed()
                 continue
@@ -392,16 +475,18 @@ def _assign_bindings(
         # Greedy match by name intersection next.
         remaining_outputs = {artifact.name: artifact for artifact in source_outputs}
         for input_name in target_inputs:
-            if input_name in bindings_per_target[target_plan.node_id]:
+            if input_name in bindings_per_target[target_plan_t.node_id]:
                 continue
             artifact = remaining_outputs.get(input_name)
             if artifact:
-                bindings_per_target[target_plan.node_id][input_name] = ArtifactBinding(
-                    input_name=input_name,
-                    source_node_id=source_plan.node_id,
-                    source_artifact_name=artifact.name,
-                    bucket=artifact.bucket,
-                    key=artifact.key,
+                bindings_per_target[target_plan_t.node_id][input_name] = (
+                    ArtifactBinding(
+                        input_name=input_name,
+                        source_node_id=source_plan_t.node_id,
+                        source_artifact_name=artifact.name,
+                        bucket=artifact.bucket,
+                        key=artifact.key,
+                    )
                 )
                 remaining_outputs.pop(input_name, None)
 
@@ -409,12 +494,12 @@ def _assign_bindings(
         remaining_inputs = [
             name
             for name in target_inputs
-            if name not in bindings_per_target[target_plan.node_id]
+            if name not in bindings_per_target[target_plan_t.node_id]
         ]
         for input_name, artifact in zip(remaining_inputs, remaining_outputs.values()):
-            bindings_per_target[target_plan.node_id][input_name] = ArtifactBinding(
+            bindings_per_target[target_plan_t.node_id][input_name] = ArtifactBinding(
                 input_name=input_name,
-                source_node_id=source_plan.node_id,
+                source_node_id=source_plan_t.node_id,
                 source_artifact_name=artifact.name,
                 bucket=artifact.bucket,
                 key=artifact.key,
@@ -486,7 +571,9 @@ def build_workflow_plan(payload: WorkflowGraphPayload) -> WorkflowPlan:
                 outputs={},
             )
         else:
-            outputs = _build_output_plan(payload.session_id, slug, node, template, bucket)
+            outputs = _build_output_plan(
+                payload.session_id, slug, node, template, bucket
+            )
             config_inputs = _build_config_inputs(
                 payload.session_id,
                 slug,
@@ -613,7 +700,10 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
     seen_manual: set[str] = set()
     for node_plan in plan.tasks():
         for artifact in node_plan.config_inputs.values():
-            if not artifact.workflow_input_name or artifact.workflow_input_name in seen_manual:
+            if (
+                not artifact.workflow_input_name
+                or artifact.workflow_input_name in seen_manual
+            ):
                 continue
             workflow_inputs.append(
                 {
@@ -624,7 +714,9 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
                     },
                 }
             )
-            input_lookup[(node_plan.node_id, artifact.name)] = artifact.workflow_input_name
+            input_lookup[(node_plan.node_id, artifact.name)] = (
+                artifact.workflow_input_name
+            )
             seen_manual.add(artifact.workflow_input_name)
 
     tasks: List[Dict[str, object]] = []
@@ -651,7 +743,7 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
     if workflow_inputs:
         entry_template["inputs"] = {"artifacts": workflow_inputs}
 
-    manifest: Dict[str, object] = {
+    manifest: Dict[str, Any] = {
         "apiVersion": "argoproj.io/v1alpha1",
         "kind": "Workflow",
         "metadata": {
@@ -678,11 +770,46 @@ def build_workflow_manifest(plan: WorkflowPlan) -> Dict[str, object]:
 
     customized_templates: List[Dict[str, Any]] = []
     for node_plan in plan.tasks():
-        registry_entry = _WORKFLOW_TEMPLATE_REGISTRY.get(node_plan.template.name)
-        if not registry_entry:
-            continue
+        template_spec: Dict[str, Any] = {}
 
-        template_spec = deepcopy(registry_entry)
+        # Build template directly from the registry spec (stored in NodeTemplate.runtime).
+        runtime = node_plan.template.runtime or {}
+        container_spec = {
+            "image": runtime.get("image"),
+            "imagePullPolicy": runtime.get("imagePullPolicy"),
+        }
+        if runtime.get("command"):
+            container_spec["command"] = runtime["command"]
+        if runtime.get("args"):
+            container_spec["args"] = runtime["args"]
+
+        template_spec = {
+            "inputs": {
+                "artifacts": [
+                    {"name": spec.name, "path": spec.path}
+                    for spec in node_plan.template.artifacts.inputs
+                ]
+            },
+            "outputs": {
+                "artifacts": [
+                    {
+                        "name": spec.name,
+                        "path": spec.path,
+                        "archive": {"none": {}},
+                    }
+                    for spec in node_plan.template.artifacts.outputs
+                ]
+            },
+        }
+
+        if container_spec.get("image"):
+            template_spec["container"] = container_spec
+
+        extra_argo = node_plan.template.argo or {}
+        for key, value in extra_argo.items():
+            if key not in template_spec:
+                template_spec[key] = value
+
         template_spec["name"] = node_plan.slug
 
         outputs_section = template_spec.get("outputs", {})

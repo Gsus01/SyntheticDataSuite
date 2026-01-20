@@ -23,7 +23,11 @@ from minio_helper import (
     sanitize_path_segment,
     upload_bytes,
 )
-from catalog_loader import NodeTemplate, load_catalog
+from catalog_loader import NodeTemplate
+from catalog_adapter import components_to_catalog
+from db import db_session, get_engine, should_run_migrations
+from component_registry import ComponentRegistry, ensure_tables
+from component_spec import ComponentSpec
 from workflow_builder import (
     WorkflowGraphPayload,
     MissingArtifactError,
@@ -57,7 +61,14 @@ if not logger.handlers:
         format="%(asctime)s [%(levelname)s] %(name)s:%(lineno)d | %(message)s",
     )
 
-_FINAL_WORKFLOW_PHASES = {"Succeeded", "Failed", "Error", "Skipped", "Omitted", "Terminated"}
+_FINAL_WORKFLOW_PHASES = {
+    "Succeeded",
+    "Failed",
+    "Error",
+    "Skipped",
+    "Omitted",
+    "Terminated",
+}
 
 
 class ArtifactUploadResponse(BaseModel):
@@ -104,7 +115,9 @@ class WorkflowSavePayload(BaseModel):
     edges: List[Dict[str, Any]]
     compiled_manifest: Optional[str] = Field(None, alias="compiledManifest")
     manifest_filename: Optional[str] = Field(None, alias="manifestFilename")
-    node_slug_map: Optional[Dict[str, str]] = Field(default_factory=dict, alias="nodeSlugMap")
+    node_slug_map: Optional[Dict[str, str]] = Field(
+        default_factory=dict, alias="nodeSlugMap"
+    )
 
 
 class WorkflowRecordResponse(BaseModel):
@@ -175,7 +188,7 @@ class OutputArtifactInfo(BaseModel):
     key: str
     workflow_input_name: Optional[str] = Field(None, alias="workflowInputName")
     size: Optional[int] = None
-    content_type: Optional[str] = Field(None, alias="contentType")
+    contentType: Optional[str] = Field(None, alias="contentType")
     exists: bool = False
 
 
@@ -224,6 +237,29 @@ class WorkflowLogsResponse(BaseModel):
 
 app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")
 
+
+@app.on_event("startup")
+def _startup_registry() -> None:
+    try:
+        engine = get_engine()
+    except RuntimeError as exc:
+        logger.error("Database not configured: %s", exc)
+        return
+
+    if should_run_migrations():
+        ensure_tables(engine)
+        from workflow_models import ensure_workflow_tables
+
+        ensure_workflow_tables(engine)
+
+    # Ensure registry tables are accessible on startup.
+    try:
+        with db_session() as session:
+            _ = ComponentRegistry(session)
+    except Exception as exc:
+        logger.warning("Failed to initialize component registry: %s", exc)
+
+
 # Allow CORS in dev so the frontend can call the API easily
 app.add_middleware(
     CORSMiddleware,
@@ -245,7 +281,9 @@ async def upload_artifact(
     suffix = Path(original_filename or "").suffix.lower()
 
     prefix = build_session_node_prefix(session_id, node_id)
-    raw_base = artifact_name or (Path(original_filename).stem if original_filename else None)
+    raw_base = artifact_name or (
+        Path(original_filename).stem if original_filename else None
+    )
     safe_base = sanitize_path_segment(raw_base or "artifact", "artifact")
     key = f"{prefix}/{safe_base}-{uuid4().hex}{suffix}"
 
@@ -281,7 +319,7 @@ async def upload_artifact(
                 pass
 
     content_type = file.content_type or "application/octet-stream"
-    upload_kwargs = {"content_type": content_type}
+    upload_kwargs: Dict[str, Any] = {"content_type": content_type}
     length = size if size is not None else -1
     if size is None:
         upload_kwargs["part_size"] = 5 * 1024 * 1024
@@ -296,7 +334,9 @@ async def upload_artifact(
         )
     except S3Error as exc:
         logger.error("Failed to upload artifact to MinIO: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Error subiendo a MinIO: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Error subiendo a MinIO: {exc}"
+        ) from exc
     finally:
         await file.close()
 
@@ -317,14 +357,26 @@ async def upload_artifact(
 
 @app.get("/workflow-templates", response_model=List[NodeTemplate])
 def get_workflow_templates() -> List[NodeTemplate]:
+    """Return the active component catalog.
+
+    This endpoint is consumed by the frontend to populate the node palette.
+    Internally we read from the DB-backed registry and keep the response shape
+    compatible with the legacy NodeTemplate models.
+    """
+
     try:
-        return load_catalog()
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            active_specs: List[ComponentSpec] = []
+            for comp in registry.list_components():
+                if not comp.active_version:
+                    continue
+                spec = registry.resolve_active_spec(comp.name)
+                if spec:
+                    active_specs.append(spec)
+            return components_to_catalog(active_specs)
+    except Exception as exc:  # pragma: no cover - surface upstream
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/health")
@@ -332,9 +384,149 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+class ComponentSummary(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    active_version: Optional[str] = Field(None, alias="activeVersion")
+    created_at: Optional[str] = Field(None, alias="createdAt")
+    updated_at: Optional[str] = Field(None, alias="updatedAt")
+
+
+class ComponentVersionInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    version: str
+    spec: Dict[str, Any]
+    created_at: Optional[str] = Field(None, alias="createdAt")
+
+
+class ComponentRegisterPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    spec: Dict[str, Any]
+    activate: bool = True
+
+
+@app.get("/components", response_model=List[ComponentSummary])
+def list_components() -> List[ComponentSummary]:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            items = []
+            for comp in registry.list_components():
+                items.append(
+                    ComponentSummary(
+                        name=comp.name,
+                        activeVersion=comp.active_version,
+                        createdAt=(
+                            comp.created_at.isoformat() if comp.created_at else None
+                        ),
+                        updatedAt=(
+                            comp.updated_at.isoformat() if comp.updated_at else None
+                        ),
+                    )
+                )
+            return items
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/components/{name}", response_model=List[ComponentVersionInfo])
+def list_component_versions(name: str) -> List[ComponentVersionInfo]:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            versions = registry.list_versions(name)
+            items: List[ComponentVersionInfo] = []
+            for row in versions:
+                items.append(
+                    ComponentVersionInfo(
+                        name=name,
+                        version=row.version,
+                        spec=row.spec_json,
+                        createdAt=(
+                            row.created_at.isoformat() if row.created_at else None
+                        ),
+                    )
+                )
+            return items
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/components/{name}/{version}", response_model=ComponentVersionInfo)
+def get_component_version(name: str, version: str) -> ComponentVersionInfo:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            row = registry.get_version(name, version)
+            if not row:
+                raise HTTPException(
+                    status_code=404, detail="Component version not found"
+                )
+            return ComponentVersionInfo(
+                name=name,
+                version=row.version,
+                spec=row.spec_json,
+                createdAt=(row.created_at.isoformat() if row.created_at else None),
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/components", response_model=ComponentSummary)
+def register_component(payload: ComponentRegisterPayload) -> ComponentSummary:
+    try:
+        spec = ComponentSpec.model_validate(payload.spec)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid ComponentSpec: {exc}"
+        ) from exc
+
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            comp = registry.register(spec, activate=payload.activate)
+            return ComponentSummary(
+                name=comp.name,
+                activeVersion=comp.active_version,
+                createdAt=(comp.created_at.isoformat() if comp.created_at else None),
+                updatedAt=(comp.updated_at.isoformat() if comp.updated_at else None),
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/components/{name}/{version}/activate", response_model=ComponentSummary)
+def activate_component_version(name: str, version: str) -> ComponentSummary:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            comp = registry.activate(name, version)
+            if not comp:
+                raise HTTPException(
+                    status_code=404, detail="Component or version not found"
+                )
+            return ComponentSummary(
+                name=comp.name,
+                activeVersion=comp.active_version,
+                createdAt=(comp.created_at.isoformat() if comp.created_at else None),
+                updatedAt=(comp.updated_at.isoformat() if comp.updated_at else None),
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ---------------------------------------------------------------------------
 # Image validation endpoints
 # ---------------------------------------------------------------------------
+
 
 class MissingImageInfo(BaseModel):
     image: str
@@ -347,7 +539,9 @@ class ImageValidationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     all_present: bool = Field(..., alias="allPresent")
-    missing_images: List[MissingImageInfo] = Field(default_factory=list, alias="missingImages")
+    missing_images: List[MissingImageInfo] = Field(
+        default_factory=list, alias="missingImages"
+    )
     present_images: List[str] = Field(default_factory=list, alias="presentImages")
     error: Optional[str] = None
 
@@ -362,7 +556,7 @@ class ValidateImagesPayload(BaseModel):
 def validate_workflow_images(payload: ValidateImagesPayload) -> ImageValidationResponse:
     """Validate that Docker images for the given templates exist in minikube."""
     result = validate_images(payload.template_names)
-    
+
     missing_info = [
         MissingImageInfo(
             image=img,
@@ -370,7 +564,7 @@ def validate_workflow_images(payload: ValidateImagesPayload) -> ImageValidationR
         )
         for img in result.missing_images
     ]
-    
+
     return ImageValidationResponse(
         allPresent=result.all_present,
         missingImages=missing_info,
@@ -381,9 +575,9 @@ def validate_workflow_images(payload: ValidateImagesPayload) -> ImageValidationR
 
 @app.get("/images/validate-all", response_model=ImageValidationResponse)
 def validate_all_workflow_images() -> ImageValidationResponse:
-    """Validate all Docker images defined in workflow-templates.yaml."""
+    """Validate all Docker images defined in the registry."""
     result = validate_all_images()
-    
+
     missing_info = [
         MissingImageInfo(
             image=img,
@@ -391,7 +585,7 @@ def validate_all_workflow_images() -> ImageValidationResponse:
         )
         for img in result.missing_images
     ]
-    
+
     return ImageValidationResponse(
         allPresent=result.all_present,
         missingImages=missing_info,
@@ -423,7 +617,9 @@ def compile_workflow(payload: WorkflowGraphPayload) -> WorkflowCompileResponse:
     except (UnknownTemplateError, MissingArtifactError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - unexpected
-        raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Failed to render workflow: {exc}"
+        ) from exc
 
     node_slug_map = {node_plan.node_id: node_plan.slug for node_plan in plan.tasks()}
     return WorkflowCompileResponse(
@@ -485,13 +681,17 @@ def _submit_workflow_via_cli(yaml_content: str) -> ArgoSubmissionResult:
         workflow_name = _extract_workflow_name(stderr_text)
 
     if not workflow_name:
-        logger.warning("No se pudo extraer el nombre del workflow de la salida: %s", stdout_text)
+        logger.warning(
+            "No se pudo extraer el nombre del workflow de la salida: %s", stdout_text
+        )
         raise RuntimeError(
             "No se pudo determinar el nombre del workflow desde la salida del comando 'argo submit'."
         )
 
     cli_output = stdout_text or stderr_text or None
-    return ArgoSubmissionResult(workflow_name=workflow_name, namespace=namespace, cli_output=cli_output)
+    return ArgoSubmissionResult(
+        workflow_name=workflow_name, namespace=namespace, cli_output=cli_output
+    )
 
 
 def _stat_object(client, bucket: str, key: str):
@@ -503,7 +703,9 @@ def _stat_object(client, bucket: str, key: str):
         raise
 
 
-def _stream_object(client, bucket: str, key: str, chunk_size: int = 1024 * 1024) -> Iterable[bytes]:
+def _stream_object(
+    client, bucket: str, key: str, chunk_size: int = 1024 * 1024
+) -> Iterable[bytes]:
     obj = client.get_object(bucket, key)
     try:
         for chunk in iter(lambda: obj.read(chunk_size), b""):
@@ -560,7 +762,7 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
     # Validate that all required Docker images exist in minikube
     template_names = [task.template_name for task in plan.tasks()]
     image_result = validate_images(template_names)
-    
+
     if not image_result.all_present:
         missing_details = []
         for img in image_result.missing_images:
@@ -569,7 +771,7 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
                 missing_details.append(f"  - {img}\n    Build: {build_cmd}")
             else:
                 missing_details.append(f"  - {img}")
-        
+
         error_msg = (
             f"Faltan imágenes Docker en minikube. El workflow fallaría con ErrImageNeverPull.\n\n"
             f"Imágenes faltantes:\n" + "\n".join(missing_details) + "\n\n"
@@ -594,7 +796,9 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
         )
     except (S3Error, RuntimeError) as exc:
         logger.error("Fallo al subir el workflow a MinIO: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Error subiendo a MinIO: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"Error subiendo a MinIO: {exc}"
+        ) from exc
 
     try:
         submission = _submit_workflow_via_cli(yaml_content)
@@ -686,44 +890,54 @@ def get_workflow_status(
                 phase=node.get("phase"),
                 type=node.get("type"),
                 id=node.get("id"),
-                display_name=display_name,
+                displayName=display_name,
                 message=node.get("message"),
                 progress=node.get("progress"),
-                started_at=node.get("startedAt"),
-                finished_at=node.get("finishedAt"),
+                startedAt=node.get("startedAt"),
+                finishedAt=node.get("finishedAt"),
             )
 
     updated_at = status_obj.get("finishedAt") or status_obj.get("startedAt")
 
     return WorkflowStatusResponse(
-        workflow_name=workflow_name,
+        workflowName=workflow_name,
         namespace=resolved_namespace,
         phase=phase,
         finished=finished,
         nodes=node_statuses,
-        updated_at=updated_at,
+        updatedAt=updated_at,
     )
 
 
 @app.post("/workflow/output-artifacts", response_model=List[OutputArtifactInfo])
-def get_output_artifacts(payload: WorkflowGraphPayload, node_id: str = Query(..., alias="nodeId")) -> List[OutputArtifactInfo]:
+def get_output_artifacts(
+    payload: WorkflowGraphPayload, node_id: str = Query(..., alias="nodeId")
+) -> List[OutputArtifactInfo]:
     try:
         plan = build_workflow_plan(payload)
     except (UnknownTemplateError, MissingArtifactError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - unexpected
-        raise HTTPException(status_code=500, detail=f"Failed to build workflow plan: {exc}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to build workflow plan: {exc}"
+        )
 
     node_plan = plan.nodes.get(node_id)
     if not node_plan:
-        raise HTTPException(status_code=404, detail=f"Nodo '{node_id}' no encontrado en el grafo")
+        raise HTTPException(
+            status_code=404, detail=f"Nodo '{node_id}' no encontrado en el grafo"
+        )
     if node_plan.template.type != "output":
-        raise HTTPException(status_code=400, detail="El nodo indicado no es de tipo salida")
+        raise HTTPException(
+            status_code=400, detail="El nodo indicado no es de tipo salida"
+        )
 
     try:
         client = get_minio_client()
     except RuntimeError as exc:
-        logger.warning("No se pudo inicializar cliente de MinIO para consultar salidas: %s", exc)
+        logger.warning(
+            "No se pudo inicializar cliente de MinIO para consultar salidas: %s", exc
+        )
         client = None
 
     artifacts: List[OutputArtifactInfo] = []
@@ -736,6 +950,7 @@ def get_output_artifacts(payload: WorkflowGraphPayload, node_id: str = Query(...
             bucket=binding.bucket,
             key=binding.key,
             workflowInputName=binding.workflow_input_name,
+            contentType=None,
         )
 
         if client:
@@ -752,7 +967,7 @@ def get_output_artifacts(payload: WorkflowGraphPayload, node_id: str = Query(...
 
             if stat:
                 info.size = getattr(stat, "size", None)
-                info.content_type = getattr(stat, "content_type", None)
+                info.contentType = getattr(stat, "content_type", None)
                 info.exists = True
 
         artifacts.append(info)
@@ -778,8 +993,12 @@ def download_artifact(bucket: str, key: str):
         stream = _stream_object(client, bucket, key)
     except S3Error as exc:
         if exc.code in {"NoSuchKey", "NoSuchBucket"}:
-            raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO") from exc
-        raise HTTPException(status_code=500, detail=f"Error leyendo desde MinIO: {exc}") from exc
+            raise HTTPException(
+                status_code=404, detail="Artefacto no encontrado en MinIO"
+            ) from exc
+        raise HTTPException(
+            status_code=500, detail=f"Error leyendo desde MinIO: {exc}"
+        ) from exc
 
     response = StreamingResponse(stream, media_type=media_type)
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
@@ -820,8 +1039,12 @@ def preview_artifact(
             data = b""
     except S3Error as exc:
         if exc.code in {"NoSuchKey", "NoSuchBucket"}:
-            raise HTTPException(status_code=404, detail="Artefacto no encontrado en MinIO") from exc
-        raise HTTPException(status_code=500, detail=f"Error leyendo desde MinIO: {exc}") from exc
+            raise HTTPException(
+                status_code=404, detail="Artefacto no encontrado en MinIO"
+            ) from exc
+        raise HTTPException(
+            status_code=500, detail=f"Error leyendo desde MinIO: {exc}"
+        ) from exc
     finally:
         try:
             if obj is not None:
@@ -878,7 +1101,7 @@ def stream_workflow_logs(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return WorkflowLogsResponse(
-        workflow_name=workflow_name,
+        workflowName=workflow_name,
         namespace=resolved_namespace,
         logs=logs,
     )
