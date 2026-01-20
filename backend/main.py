@@ -248,6 +248,9 @@ def _startup_registry() -> None:
 
     if should_run_migrations():
         ensure_tables(engine)
+        from workflow_models import ensure_workflow_tables
+
+        ensure_workflow_tables(engine)
 
     # Ensure registry tables are accessible on startup.
     try:

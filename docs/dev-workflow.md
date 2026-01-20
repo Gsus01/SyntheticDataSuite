@@ -125,7 +125,7 @@ MINIKUBE_PROFILE=devbox K8S_CONTEXT=minikube \
 
 ### Backend, MinIO y Argo CLI
 
-El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y ahora también para guardar el manifiesto del workflow antes de enviarlo a Argo. Las variables más importantes relacionadas con MinIO son:
+El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y para guardar el manifiesto del workflow antes de enviarlo a Argo. Las definiciones de workflows ahora se guardan en PostgreSQL. Las variables más importantes relacionadas con MinIO son:
 
 - `MINIO_ENDPOINT` — endpoint del servicio S3 (por defecto `localhost:9000`)
 - `MINIO_ACCESS_KEY` — access key obligatoria
