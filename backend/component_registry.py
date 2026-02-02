@@ -118,3 +118,44 @@ class ComponentRegistry:
         component.active_version = version
         self.session.flush()
         return component
+
+    def delete_component(self, name: str) -> bool:
+        component = self.get_component(name)
+        if not component:
+            return False
+        self.session.delete(component)
+        self.session.flush()
+        return True
+
+    def delete_version(self, name: str, version: str) -> bool:
+        component = self.get_component(name)
+        if not component:
+            return False
+        row = self.get_version(name, version)
+        if not row:
+            return False
+
+        self.session.delete(row)
+        self.session.flush()
+
+        # If active version was deleted, choose latest remaining
+        if component.active_version == version:
+            stmt = (
+                select(ComponentVersion)
+                .where(ComponentVersion.component_id == component.id)
+                .order_by(ComponentVersion.created_at.desc())
+            )
+            remaining = self.session.scalars(stmt).first()
+            component.active_version = remaining.version if remaining else None
+            self.session.flush()
+
+        # If no versions remain, delete the component row
+        stmt = select(ComponentVersion).where(
+            ComponentVersion.component_id == component.id
+        )
+        remaining_any = self.session.scalars(stmt).first()
+        if not remaining_any:
+            self.session.delete(component)
+            self.session.flush()
+
+        return True

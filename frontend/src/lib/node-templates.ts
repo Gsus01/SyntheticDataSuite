@@ -26,7 +26,11 @@ export type CatalogNodeTemplate = {
 const CONFIG_EXTENSIONS = [".yaml", ".yml", ".json"];
 
 export function isConfigArtifact(spec: CatalogArtifact): boolean {
-  if (spec.role && spec.role.toLowerCase() === "config") return true;
+  if (spec.role) {
+    const role = spec.role.toLowerCase();
+    if (role === "config") return true;
+    return false;
+  }
   const name = (spec.name || "").toLowerCase();
   const path = (spec.path || "").toLowerCase();
   if (name === "processed-data") return false;
@@ -46,7 +50,9 @@ function normalizePorts(list?: CatalogArtifact[]): NodeArtifactPort[] {
 }
 
 export function computeConnectablePorts(artifacts?: CatalogArtifacts | null): FlowNodePorts {
-  const inputs = normalizePorts(artifacts?.inputs).filter((spec) => !isConfigArtifact(spec));
+  const rawInputs = Array.isArray(artifacts?.inputs) ? artifacts?.inputs : [];
+  const filteredInputs = rawInputs.filter((spec) => !isConfigArtifact(spec));
+  const inputs = normalizePorts(filteredInputs);
   const outputs = normalizePorts(artifacts?.outputs);
   return { inputs, outputs };
 }
@@ -75,4 +81,3 @@ export async function fetchNodeTemplates(): Promise<CatalogNodeTemplate[]> {
   }
   return (await response.json()) as CatalogNodeTemplate[];
 }
-

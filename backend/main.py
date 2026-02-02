@@ -51,6 +51,7 @@ from image_validator import (
     get_build_command_for_image,
     ImageValidationResult,
 )
+from component_generation.api import router as component_generation_router
 
 
 logger = logging.getLogger(__name__)
@@ -236,6 +237,7 @@ class WorkflowLogsResponse(BaseModel):
 
 
 app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")
+app.include_router(component_generation_router)
 
 
 @app.on_event("startup")
@@ -409,6 +411,16 @@ class ComponentRegisterPayload(BaseModel):
     activate: bool = True
 
 
+class ComponentDeleteResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    version: Optional[str] = None
+    deleted: bool = True
+    component_deleted: bool = Field(False, alias="componentDeleted")
+    active_version: Optional[str] = Field(None, alias="activeVersion")
+
+
 @app.get("/components", response_model=List[ComponentSummary])
 def list_components() -> List[ComponentSummary]:
     try:
@@ -516,6 +528,64 @@ def activate_component_version(name: str, version: str) -> ComponentSummary:
                 activeVersion=comp.active_version,
                 createdAt=(comp.created_at.isoformat() if comp.created_at else None),
                 updatedAt=(comp.updated_at.isoformat() if comp.updated_at else None),
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/components/{name}", response_model=ComponentDeleteResponse)
+def delete_component(name: str) -> ComponentDeleteResponse:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            if not registry.get_component(name):
+                raise HTTPException(status_code=404, detail="Component not found")
+            registry.delete_component(name)
+            return ComponentDeleteResponse(
+                name=name,
+                deleted=True,
+                componentDeleted=True,
+                activeVersion=None,
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/components/{name}/{version}", response_model=ComponentDeleteResponse)
+def delete_component_version(name: str, version: str) -> ComponentDeleteResponse:
+    try:
+        with db_session() as session:
+            registry = ComponentRegistry(session)
+            component = registry.get_component(name)
+            if not component:
+                raise HTTPException(status_code=404, detail="Component not found")
+            if not registry.get_version(name, version):
+                raise HTTPException(
+                    status_code=404, detail="Component version not found"
+                )
+
+            registry.delete_version(name, version)
+
+            component = registry.get_component(name)
+            if not component:
+                return ComponentDeleteResponse(
+                    name=name,
+                    version=version,
+                    deleted=True,
+                    componentDeleted=True,
+                    activeVersion=None,
+                )
+
+            return ComponentDeleteResponse(
+                name=name,
+                version=version,
+                deleted=True,
+                componentDeleted=False,
+                activeVersion=component.active_version,
             )
     except HTTPException:
         raise

@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Any, Dict, List
+
+from component_generation.llm import LLMClient
+from component_generation.context import load_prompt
+from component_generation.llm_trace import write_llm_request, write_llm_response
+from component_generation.schemas import ExtractionPlan
+from component_generation.schemas import ComponentType
+from component_generation.state import PipelineState
+
+logger = logging.getLogger(__name__)
+
+
+def _is_under(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def _validate_plan_paths(plan: Dict[str, Any]) -> None:
+    errors: List[str] = []
+    components = plan.get("components") or []
+    for comp in components:
+        name = comp.get("name", "component")
+        ctype = comp.get("type")
+        if ctype == "input":
+            errors.append(
+                f"{name}: input components are not allowed (use built-in input node)"
+            )
+        for port in comp.get("inputs") or []:
+            path = port.get("path")
+            role = port.get("role")
+            if not isinstance(path, str):
+                errors.append(f"{name}: input port missing path")
+                continue
+            if role == "config":
+                if not _is_under(path, "/data/config"):
+                    errors.append(
+                        f"{name}: config input path must be under /data/config: {path}"
+                    )
+            else:
+                if not _is_under(path, "/data/inputs"):
+                    errors.append(
+                        f"{name}: input path must be under /data/inputs: {path}"
+                    )
+        for port in comp.get("outputs") or []:
+            path = port.get("path")
+            if not isinstance(path, str):
+                errors.append(f"{name}: output port missing path")
+                continue
+            if not _is_under(path, "/data/outputs"):
+                errors.append(
+                    f"{name}: output path must be under /data/outputs: {path}"
+                )
+    if errors:
+        raise ValueError("Invalid port paths:\n" + "\n".join(errors))
+
+
+def _sanitize_kebab(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9\-]+", "-", value.strip().lower())
+    cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
+    return cleaned or "component"
+
+
+def _infer_type(source: str, paths: List[str]) -> ComponentType:
+    haystack = (source or "").lower()
+    for path in paths:
+        haystack += f" {path.lower()}"
+
+    if any(k in haystack for k in ["preprocess", "normalize", "clean", "feature"]):
+        return "preprocessing"
+    if any(k in haystack for k in ["train", "fit", "epoch", "loss"]):
+        return "training"
+    if any(k in haystack for k in ["generate", "synthesize", "sample"]):
+        return "generation"
+    return "other"
+
+
+def _default_component_name(paths: List[str]) -> str:
+    if not paths:
+        return "component"
+    name = Path(paths[0]).stem
+    return _sanitize_kebab(name)
+
+
+def _heuristic_plan(state: PipelineState) -> Dict[str, Any]:
+    source = state.get("combined_source") or ""
+    input_paths = state.get("input_paths") or []
+    ctype = _infer_type(source, input_paths)
+    name = _default_component_name(input_paths)
+
+    component = {
+        "name": name,
+        "title": name.replace("-", " ").title(),
+        "type": ctype,
+        "description": "Auto-generated plan (heuristic).",
+        "inputs": [
+            {
+                "name": "input-data",
+                "path": "/data/inputs/input",
+                "role": "data",
+            }
+        ],
+        "outputs": [
+            {
+                "name": "output-data",
+                "path": "/data/outputs/output",
+                "role": "data",
+            }
+        ],
+        "parameters_defaults": {},
+        "notes": ["Generated without LLM. Adjust IO/params in HITL."],
+    }
+
+    return {
+        "components": [component],
+        "rationale": "Heuristic plan derived from input filenames and content.",
+        "assumptions": ["LLM not configured; using minimal defaults."],
+    }
+
+
+def node_analyst(state: PipelineState) -> Dict[str, Any]:
+    logger.info("analyst: building plan")
+    llm: LLMClient | None = state.get("llm")
+    combined = state.get("combined_source") or ""
+    context = state.get("analyst_context") or ""
+    feedback = (state.get("feedback") or "").strip()
+    disable_llm = bool(state.get("disable_llm"))
+
+    if llm and not disable_llm:
+        system = load_prompt("analyst_system.md")
+        user_parts = [
+            "ANALYST CONTEXT:\n",
+            context,
+            "\n\nSOURCE (may be truncated):\n",
+            combined,
+        ]
+        if feedback:
+            user_parts += ["\n\nUSER FEEDBACK (must incorporate):\n", feedback]
+        user = "".join(user_parts)
+
+        try:
+            write_llm_request(
+                state.get("session_dir"),
+                "analyst",
+                "plan",
+                {
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    "format_schema": ExtractionPlan.model_json_schema(),
+                    "provider": state.get("llm_provider"),
+                    "model": state.get("llm_model"),
+                },
+            )
+            raw = llm.invoke(
+                [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                format_schema=ExtractionPlan.model_json_schema(),
+            )
+            write_llm_response(state.get("session_dir"), "analyst", "plan", raw)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("analyst: LLM raw response:\n%s", raw.strip())
+            plan_obj = ExtractionPlan.model_validate_json(raw)
+            plan = plan_obj.model_dump()
+            _validate_plan_paths(plan)
+            logger.info("analyst: components=%s", len(plan.get("components", [])))
+        except Exception as exc:
+            logger.error("analyst: LLM failed: %s", exc)
+            raise RuntimeError("Analyst LLM failed.") from exc
+    else:
+        if not disable_llm:
+            raise RuntimeError(
+                "LLM not configured; rerun with --no-llm to skip LLM."
+            )
+        plan = _heuristic_plan(state)
+        logger.info("analyst: LLM disabled, using heuristic plan.")
+
+    session_dir = state.get("session_dir")
+    if session_dir:
+        Path(session_dir).mkdir(parents=True, exist_ok=True)
+        (Path(session_dir) / "plan.json").write_text(
+            json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    return {"plan": plan, "approved": False}
