@@ -85,6 +85,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Disable LLM and run heuristic plan + stub outputs.",
     )
     parser.add_argument(
+        "--no-structured-output",
+        action="store_true",
+        help=(
+            "Disable structured output (json_schema). "
+            "Uses prompt-only JSON with strict validation."
+        ),
+    )
+    parser.add_argument(
         "--provider",
         default="ollama",
         help="LLM provider (default: ollama).",
@@ -212,6 +220,7 @@ def main() -> None:
         "llm_provider": args.provider,
         "llm_model": args.model,
         "llm_temperature": args.temperature,
+        "structured_output": not args.no_structured_output,
         "disable_llm": args.no_llm,
     }
 

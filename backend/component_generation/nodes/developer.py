@@ -165,6 +165,7 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
     context = state.get("developer_context") or ""
     source = _truncate(state.get("combined_source") or "")
     disable_llm = bool(state.get("disable_llm"))
+    use_structured_output = bool(state.get("structured_output", True))
     out_dir.mkdir(parents=True, exist_ok=True)
     session_path = Path(session_dir).resolve() if session_dir else None
     components_root = (session_path / "components") if session_path else out_dir
@@ -188,6 +189,16 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
 
         if llm and not disable_llm:
             system = load_prompt("developer_system.md")
+            schema_hint = ""
+            if not use_structured_output:
+                schema_hint = (
+                    "\n\nOUTPUT JSON SCHEMA:\n"
+                    + json.dumps(
+                        GeneratedComponentFiles.model_json_schema(),
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                )
             user = (
                 "COMPONENT PLAN:\n"
                 + json.dumps(comp, indent=2, ensure_ascii=False)
@@ -196,7 +207,14 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
                 + "\n\nSOURCE (may be truncated):\n"
                 + source
             )
+            if schema_hint:
+                user += schema_hint
             try:
+                format_schema = (
+                    GeneratedComponentFiles.model_json_schema()
+                    if use_structured_output
+                    else None
+                )
                 write_llm_request(
                     state.get("session_dir"),
                     "developer",
@@ -206,7 +224,8 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
                             {"role": "system", "content": system},
                             {"role": "user", "content": user},
                         ],
-                        "format_schema": GeneratedComponentFiles.model_json_schema(),
+                        "format_schema": format_schema,
+                        "structured_output": use_structured_output,
                         "provider": state.get("llm_provider"),
                         "model": state.get("llm_model"),
                     },
@@ -216,7 +235,7 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    format_schema=GeneratedComponentFiles.model_json_schema(),
+                    format_schema=format_schema,
                 )
                 write_llm_response(state.get("session_dir"), "developer", name, raw)
                 if logger.isEnabledFor(logging.DEBUG):

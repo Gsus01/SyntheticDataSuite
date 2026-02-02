@@ -36,5 +36,6 @@ class PipelineState(TypedDict, total=False):
     llm_provider: Optional[str]
     llm_model: Optional[str]
     llm_temperature: Optional[float]
+    structured_output: bool
     disable_llm: bool
     repair_context: str

@@ -129,20 +129,32 @@ def node_analyst(state: PipelineState) -> Dict[str, Any]:
     context = state.get("analyst_context") or ""
     feedback = (state.get("feedback") or "").strip()
     disable_llm = bool(state.get("disable_llm"))
+    use_structured_output = bool(state.get("structured_output", True))
 
     if llm and not disable_llm:
         system = load_prompt("analyst_system.md")
+        schema_hint = ""
+        if not use_structured_output:
+            schema_hint = (
+                "\n\nOUTPUT JSON SCHEMA:\n"
+                + json.dumps(ExtractionPlan.model_json_schema(), indent=2, ensure_ascii=False)
+            )
         user_parts = [
             "ANALYST CONTEXT:\n",
             context,
             "\n\nSOURCE (may be truncated):\n",
             combined,
         ]
+        if schema_hint:
+            user_parts.append(schema_hint)
         if feedback:
             user_parts += ["\n\nUSER FEEDBACK (must incorporate):\n", feedback]
         user = "".join(user_parts)
 
         try:
+            format_schema = (
+                ExtractionPlan.model_json_schema() if use_structured_output else None
+            )
             write_llm_request(
                 state.get("session_dir"),
                 "analyst",
@@ -152,7 +164,8 @@ def node_analyst(state: PipelineState) -> Dict[str, Any]:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
-                    "format_schema": ExtractionPlan.model_json_schema(),
+                    "format_schema": format_schema,
+                    "structured_output": use_structured_output,
                     "provider": state.get("llm_provider"),
                     "model": state.get("llm_model"),
                 },
@@ -162,7 +175,7 @@ def node_analyst(state: PipelineState) -> Dict[str, Any]:
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                format_schema=ExtractionPlan.model_json_schema(),
+                format_schema=format_schema,
             )
             write_llm_response(state.get("session_dir"), "analyst", "plan", raw)
             if logger.isEnabledFor(logging.DEBUG):

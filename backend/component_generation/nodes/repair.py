@@ -45,6 +45,7 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
     generated = state.get("generated_index") or {}
     session_dir = state.get("session_dir")
     repair_context = state.get("repair_context") or ""
+    use_structured_output = bool(state.get("structured_output", True))
 
     # group issues by component
     issues_by_component: Dict[str, List[str]] = {}
@@ -70,6 +71,16 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
         comp_plan = plan_components.get(comp_name) or {}
 
         system = load_prompt("repair_system.md")
+        schema_hint = ""
+        if not use_structured_output:
+            schema_hint = (
+                "\n\nOUTPUT JSON SCHEMA:\n"
+                + json.dumps(
+                    GeneratedComponentFiles.model_json_schema(),
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
         user = (
             "REPAIR CONTEXT:\n"
             + repair_context
@@ -80,7 +91,12 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
             + "\n\nCURRENT FILES:\n"
             + json.dumps(current_files, indent=2, ensure_ascii=False)
         )
+        if schema_hint:
+            user += schema_hint
 
+        format_schema = (
+            GeneratedComponentFiles.model_json_schema() if use_structured_output else None
+        )
         write_llm_request(
             state.get("session_dir"),
             "repair",
@@ -90,7 +106,8 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
-                "format_schema": GeneratedComponentFiles.model_json_schema(),
+                "format_schema": format_schema,
+                "structured_output": use_structured_output,
                 "provider": state.get("llm_provider"),
                 "model": state.get("llm_model"),
             },
@@ -100,7 +117,7 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            format_schema=GeneratedComponentFiles.model_json_schema(),
+            format_schema=format_schema,
         )
         write_llm_response(state.get("session_dir"), "repair", comp_name, raw)
         if logger.isEnabledFor(logging.DEBUG):

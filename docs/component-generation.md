@@ -26,10 +26,9 @@ flowchart TD
 ## Current scope
 
 - Offline CLI-only execution.
-- Analyst uses a heuristic plan (no LLM yet).
-- Developer generates **stub** files.
-- Tester runs basic validations.
-- Integration step is a dry-run placeholder.
+- LangGraph pipeline with Analyst -> HITL -> Developer -> Tester -> Repair.
+- Integration step is a dry-run placeholder (unless `--run-integration`).
+  - Session scripts are generated to build images and register components.
 
 ---
 
@@ -40,6 +39,8 @@ backend/component_generation/
   cli.py                 # CLI entrypoint (offline runner)
   context.py             # repo context snippets (docs/specs)
   ingest.py              # file + notebook ingest
+  llm.py                 # LLM clients (Ollama/OpenRouter)
+  llm_trace.py           # writes LLM request/response per node + session
   logging_utils.py       # log setup (json/plain)
   schemas.py             # Pydantic schema for plans/reports
   state.py               # LangGraph pipeline state
@@ -70,7 +71,7 @@ backend/component_generation/
 - `backend/component_generation/cli.py`
   - CLI entrypoint for running the pipeline locally.
   - Handles flags (`--inputs`, `--auto-approve`, `--log-level`, etc.).
-  - Writes session outputs to `components/generated/.sessions/<id>/`.
+  - Writes session outputs to `components/generated-sessions/<id>/`.
 
 - `backend/component_generation/workflow.py`
   - Defines the LangGraph graph and the node ordering.
@@ -92,9 +93,7 @@ backend/component_generation/
     - Optional markdown can be included as comments.
 
 - `backend/component_generation/context.py`
-  - Assembles repo-specific context that will be fed to the LLM later.
-  - Currently loads: `docs/new-component.md`, `backend/component_spec.py`,
-    `backend/catalog_adapter.py`.
+  - Loads the prompt context files from `backend/component_generation/prompts/`.
 
 - `backend/component_generation/logging_utils.py`
   - Logging setup and JSON formatter.
@@ -106,7 +105,9 @@ backend/component_generation/
   - Ingests files and writes `combined_source.txt` for traceability.
 
 - `backend/component_generation/nodes/analyst.py`
-  - Generates a **heuristic** plan (no LLM yet).
+  - Calls LLM to generate a plan (`ExtractionPlan`).
+  - Validates IO paths (inputs under `/data/inputs`, outputs under `/data/outputs`,
+    config only under `/data/config` with role `config`).
   - Produces `plan.json` for review and HITL.
 
 - `backend/component_generation/nodes/hitl.py`
@@ -114,18 +115,21 @@ backend/component_generation/
   - If not TTY or `--auto-approve`, skips prompts.
 
 - `backend/component_generation/nodes/developer.py`
-  - Writes stub artifacts: `main.py`, `Dockerfile`, `ComponentSpec.json`.
-  - Uses defaults aligned with `docs/new-component.md`.
+  - Calls LLM to generate `main.py`, `Dockerfile`, `ComponentSpec.json`.
+  - Strictly validates `ComponentSpec` before writing to disk.
 
 - `backend/component_generation/nodes/tester.py`
   - Validates generated outputs:
     - ComponentSpec schema (from `backend/component_spec.py`)
     - IO paths under `/data/inputs|outputs|config`
-    - Basic Dockerfile + argparse sanity checks
+    - Dockerfile + argparse sanity checks
+
+- `backend/component_generation/nodes/repair.py`
+  - One-shot auto-fix based on tester issues.
+  - Re-validates ComponentSpec after repair.
 
 - `backend/component_generation/nodes/integration.py`
-  - Placeholder. Logs that integration is skipped.
-  - Will later build/push image + register component.
+  - Placeholder. Logs that integration is skipped unless `--run-integration`.
 
 ## CLI usage
 
@@ -228,6 +232,10 @@ components/generated-sessions/<session_id>/
   integration_report.txt
   build_images.sh
   register_components.sh
+  llm/
+    analyst/plan/{request.json,response.txt}
+    developer/<component>/{request.json,response.txt}
+    repair/<component>/{request.json,response.txt}
 ```
 
 ---
@@ -265,3 +273,17 @@ Analyst rule note:
 2. Implement Developer with LLM output + template scaffolds.
 3. Add Integration step (build image, push, register in DB).
 4. Wire into backend API + frontend UI.
+Disable structured outputs (for models that do not support `json_schema`):
+
+```bash
+uv run --project backend python -m component_generation.cli \
+  --inputs path/to/script.py \
+  --provider openrouter \
+  --model "stepfun/step-3.5-flash:free" \
+  --no-structured-output
+```
+
+Behavior:
+- The pipeline **still** requires valid JSON output.
+- The JSON schema is embedded in the prompt.
+- No heuristic parsing or fallback is used; invalid JSON fails the run.
