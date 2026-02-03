@@ -752,7 +752,7 @@ export default function NodeInspector({
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
                   Artefactos de salida
                 </div>
-                {outputLoading && <span className="text-[11px] text-gray-500">Buscando artefactos…</span>}
+                {/* {outputLoading && <span className="text-[11px] text-gray-500">Buscando artefactos…</span>} */}
                 {outputError && <span className="text-[11px] text-red-600">{outputError}</span>}
                 {!outputLoading && !outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
                   <span className="text-[11px] text-gray-500">
