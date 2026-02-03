@@ -57,8 +57,14 @@ const STATUS_POLL_INTERVAL_FAST = 600;
 const STATUS_POLL_INTERVAL_WAITING = 450;
 const STATUS_POLL_INTERVAL_ERROR = 4000;
 
-let id = 0;
-const getId = () => `dnd_${id++}`;
+let fallbackCounter = 0;
+const createNodeId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  fallbackCounter += 1;
+  return `node_${Date.now().toString(36)}_${fallbackCounter}`;
+};
 
 type DragMetaPayload = {
   tone?: unknown;
@@ -455,7 +461,7 @@ function EditorInner() {
           : undefined;
       const artifactPorts = metaPorts ?? templatePorts;
 
-      const newNodeId = getId();
+      const newNodeId = createNodeId();
       const newNode: Node<FlowNodeData> = {
         id: newNodeId,
         type,
