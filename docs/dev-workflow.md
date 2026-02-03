@@ -2,6 +2,12 @@
 
 Este documento resume cómo arrancar el entorno de desarrollo local de forma rápida usando los scripts y el Makefile. La idea es minimizar pasos manuales y permitir arrancar sólo las piezas que necesites (MinIO, Argo, backend, frontend).
 
+### Generador de componentes (offline)
+
+El pipeline offline de generación de componentes (basado en LangGraph) se documenta en:
+
+- `docs/component-generation.md`
+
 #### Requisitos
 
 Antes de empezar, asegúrate de tener instalados:
@@ -199,5 +205,4 @@ El frontend realiza polling periódico contra `GET /workflow/status`. Si el serv
 - Si Argo pide login, espera a que el `k8s-up.sh` haya aplicado el parche `--auth-mode=server` y que el rollout termine.
 - Si un port-forward no arranca, revisa logs en `.tmp/dev/*.log`.
 - Si cambias los manifests en `deploy/`, vuelve a correr `make k8s-up` o aplica los YAML con `kubectl apply -f ...`.
-
 
