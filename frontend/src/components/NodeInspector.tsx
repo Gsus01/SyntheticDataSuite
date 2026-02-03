@@ -173,7 +173,6 @@ export default function NodeInspector({
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
   const [outputArtifacts, setOutputArtifacts] = React.useState<OutputArtifactInfo[] | null>(null);
-  const [outputLoading, setOutputLoading] = React.useState(false);
   const [outputError, setOutputError] = React.useState<string | null>(null);
   const [downloadState, setDownloadState] = React.useState<Record<string, DownloadState>>({});
   const [previewStates, setPreviewStates] = React.useState<Record<string, OutputPreviewState>>({});
@@ -197,7 +196,6 @@ export default function NodeInspector({
     setUploadSuccess(null);
     setUploading(false);
     setOutputArtifacts(null);
-    setOutputLoading(false);
     setOutputError(null);
     setDownloadState({});
     setPreviewStates({});
@@ -209,7 +207,6 @@ export default function NodeInspector({
   React.useEffect(() => {
     if (!isOpen || !node || node.type !== NODE_TYPES.nodeOutput) {
       setOutputArtifacts(null);
-      setOutputLoading(false);
       setOutputError(null);
       setDownloadState({});
       setPreviewStates({});
@@ -219,7 +216,6 @@ export default function NodeInspector({
     const nodeId = node.id;
     let cancelled = false;
     async function loadArtifacts() {
-      setOutputLoading(true);
       setOutputError(null);
       try {
         const artifacts = await getOutputArtifacts(
@@ -238,10 +234,6 @@ export default function NodeInspector({
           const message = error instanceof Error ? error.message : "Error obteniendo artefactos";
           setOutputError(message);
           setOutputArtifacts([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setOutputLoading(false);
         }
       }
     }
@@ -752,9 +744,8 @@ export default function NodeInspector({
                 <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
                   Artefactos de salida
                 </div>
-                {/* {outputLoading && <span className="text-[11px] text-gray-500">Buscando artefactos…</span>} */}
                 {outputError && <span className="text-[11px] text-red-600">{outputError}</span>}
-                {!outputLoading && !outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
+                {!outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
                   <span className="text-[11px] text-gray-500">
                     Conecta este nodo a la salida de otro para ver los artefactos generados.
                   </span>
