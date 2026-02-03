@@ -164,6 +164,8 @@ Además, el backend ejecuta directamente `argo submit` usando el manifiesto gene
 
 La respuesta del endpoint incluye el nombre del workflow lanzado, el namespace y la ruta dentro de MinIO donde se guardó el YAML (`sessions/<sessionId>/workflow/<filename>`), para poder consultarlo más adelante si es necesario.
 
+> **Nota:** Estas variables sólo aplican al envío de workflows; el seguimiento de estado usa la API de Argo Server y no depende del binario `argo`.
+
 ### Enviar el DAG generado en el canvas
 
 El editor (`frontend`) envía el flujo directamente a Argo usando el botón **Enviar Workflow**. El proceso es:
@@ -205,4 +207,3 @@ El frontend realiza polling periódico contra `GET /workflow/status`. Si el serv
 - Si Argo pide login, espera a que el `k8s-up.sh` haya aplicado el parche `--auth-mode=server` y que el rollout termine.
 - Si un port-forward no arranca, revisa logs en `.tmp/dev/*.log`.
 - Si cambias los manifests en `deploy/`, vuelve a correr `make k8s-up` o aplica los YAML con `kubectl apply -f ...`.
-

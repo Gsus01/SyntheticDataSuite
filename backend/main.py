@@ -3,6 +3,7 @@ import logging
 import os
 import shlex
 import subprocess
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -236,16 +237,13 @@ class WorkflowLogsResponse(BaseModel):
     logs: str
 
 
-app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0")
-app.include_router(component_generation_router)
-
-
-@app.on_event("startup")
-def _startup_registry() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     try:
         engine = get_engine()
     except RuntimeError as exc:
         logger.error("Database not configured: %s", exc)
+        yield
         return
 
     if should_run_migrations():
@@ -260,6 +258,12 @@ def _startup_registry() -> None:
             _ = ComponentRegistry(session)
     except Exception as exc:
         logger.warning("Failed to initialize component registry: %s", exc)
+
+    yield
+
+
+app = FastAPI(title="Synthetic Data Suite Backend", version="0.1.0", lifespan=lifespan)
+app.include_router(component_generation_router)
 
 
 # Allow CORS in dev so the frontend can call the API easily

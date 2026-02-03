@@ -12,7 +12,7 @@ from pathlib import Path
 import os
 
 import yaml
-from pydantic import BaseModel, Field  # type: ignore[import-not-found]
+from pydantic import BaseModel, ConfigDict, Field  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +79,11 @@ class FlowEdgePayload(BaseModel):
 
 
 class WorkflowGraphPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     session_id: str = Field(..., alias="sessionId")
     nodes: List[FlowNodePayload]
     edges: List[FlowEdgePayload]
-
-    class Config:
-        allow_population_by_field_name = True
 
 
 class ArtifactPlan(BaseModel):
