@@ -9,6 +9,7 @@ dependencies = [
     "kubernetes>=28.1.0",
     "minio>=7.2.18",
     "pydantic>=2.12.3",
+    "pytest>=8.0.0",
     "python-multipart>=0.0.20",
     "python-dotenv>=1.0.1",
     "pyyaml>=6.0.3",
