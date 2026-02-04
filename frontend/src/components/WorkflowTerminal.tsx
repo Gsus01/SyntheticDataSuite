@@ -300,8 +300,17 @@ function extractTimestampSegment(text: string): { timestamp?: string; remainder:
 
 function formatInlineTimestamp(raw?: string): string | undefined {
   if (!raw) return undefined;
-  const normalized = raw.replace(",", ".").replace(" ", "T");
+
+  let normalized = raw.replace(",", ".").replace(" ", "T");
+
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(normalized);
+
+  if (!hasTimezone) {
+    normalized += "Z";
+  }
+
   const parsed = Date.parse(normalized);
+
   if (!Number.isNaN(parsed)) {
     const date = new Date(parsed);
     const hh = String(date.getHours()).padStart(2, "0");
@@ -309,8 +318,16 @@ function formatInlineTimestamp(raw?: string): string | undefined {
     const ss = String(date.getSeconds()).padStart(2, "0");
     return `${hh}:${mm}:${ss}`;
   }
+
   const fallback = raw.match(/(\d{2}:\d{2}:\d{2})/);
   return fallback ? fallback[1] : raw;
+}
+
+function generateEntryKey(line: string, lineNumber: number): string {
+  const hash = line.split('').reduce((acc, char) => {
+    return ((acc << 5) - acc) + char.charCodeAt(0);
+  }, 0);
+  return `${hash}:${lineNumber}`;
 }
 
 function extractLevelSegment(text: string): { levelLabel: LogLevel; remainder: string } {
@@ -398,7 +415,11 @@ function simplifyKeyValueContent(text: string): string {
   return [base, extraText].filter(Boolean).join(" ").trim();
 }
 
-function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLogEntry[] {
+function buildLogEntries(
+  raw: string,
+  labelHints: Map<string, string>,
+  stableTimestamps: Map<string, string>
+): ParsedLogEntry[] {
   if (!raw) return [];
   const lines = raw.split(/\r?\n/);
   const total = lines.length;
@@ -406,6 +427,8 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
   const sliced = lines.slice(start);
   const assignments = new Map<string, string>();
   const baseCounts = new Map<string, number>();
+
+  let lastValidTimestamp: string | undefined = undefined;
 
   const assignLabel = (rawKey: string, baseLabel: string) => {
     const normalizedRaw = normalizeHintKey(rawKey || baseLabel);
@@ -430,6 +453,7 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
       const { timestamp, remainder: afterTimestamp } = extractTimestampSegment(remainder);
       const { levelLabel, remainder: finalContent } = extractLevelSegment(afterTimestamp);
       const simplified = simplifyKeyValueContent(finalContent);
+
       let contentText = simplified || finalContent.trim();
       if (!contentText) {
         contentText = afterTimestamp.trim();
@@ -437,6 +461,31 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
       if (!contentText) {
         contentText = cleanLine.trim();
       }
+
+      let entryTimestamp: string | undefined;
+
+      if (timestamp) {
+        entryTimestamp = formatInlineTimestamp(timestamp);
+        lastValidTimestamp = entryTimestamp;
+      } else {
+        entryTimestamp = lastValidTimestamp;
+
+        if (!entryTimestamp) {
+          const entryKey = generateEntryKey(cleanLine, lineNumber);
+          entryTimestamp = stableTimestamps.get(entryKey);
+
+          if (!entryTimestamp) {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, "0");
+            const mm = String(now.getMinutes()).padStart(2, "0");
+            const ss = String(now.getSeconds()).padStart(2, "0");
+            entryTimestamp = `${hh}:${mm}:${ss}`;
+            stableTimestamps.set(entryKey, entryTimestamp);
+          }
+          lastValidTimestamp = entryTimestamp;
+        }
+      }
+
       return {
         id: `${lineNumber}:${displayNodeLabel}:${idx}`,
         lineNumber,
@@ -444,7 +493,7 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
         nodeColor: colorForNode(baseNodeLabel),
         levelLabel,
         content: contentText || "",
-        timestamp: formatInlineTimestamp(timestamp),
+        timestamp: entryTimestamp,
       };
     })
     .filter((entry, idx) => !(sliced[idx] === "" && idx === sliced.length - 1));
@@ -476,9 +525,11 @@ export default function WorkflowTerminal({
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const startYRef = React.useRef(0);
   const startHeightRef = React.useRef(0);
+  const stableTimestampsRef = React.useRef<Map<string, string>>(new Map());
+
 
   const labelHints = React.useMemo(() => buildNodeLabelHints(nodeSlugMap, nodes), [nodeSlugMap, nodes]);
-  const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints), [labelHints, logText]);
+  const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints, stableTimestampsRef.current), [labelHints, logText]);
   const lineCount = logEntries.length;
 
   const pollLogs = React.useCallback(async () => {
@@ -532,6 +583,7 @@ export default function WorkflowTerminal({
   }, [isOpen, resolvedNamespace, workflowName]);
 
   React.useEffect(() => {
+    stableTimestampsRef.current.clear();
     setLogText("");
     setFetchError(null);
     setLastUpdated(null);
@@ -672,11 +724,10 @@ export default function WorkflowTerminal({
             type="button"
             onClick={handleManualRefresh}
             disabled={!workflowName}
-            className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${
-              !workflowName
+            className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${!workflowName
                 ? "cursor-not-allowed text-gray-600"
                 : "text-gray-200 hover:bg-gray-800 cursor-pointer"
-            }`}
+              }`}
           >
             Actualizar
           </button>
