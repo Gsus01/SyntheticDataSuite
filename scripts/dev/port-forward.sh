@@ -6,6 +6,9 @@ set -euo pipefail
 #   scripts/dev/port-forward.sh start [--only minio|argo|db]
 #   scripts/dev/port-forward.sh stop  [--only minio|argo|db]
 #   scripts/dev/port-forward.sh status
+#
+# Environment variables:
+#   DB_LOCAL_PORT   Local TCP port used for Postgres port-forward (default: 5432)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="$ROOT_DIR/.tmp/dev"
@@ -43,6 +46,8 @@ should_do() {
   if [[ -z "$ONLY_COMPONENT" ]]; then return 0; fi
   [[ "$ONLY_COMPONENT" == "$comp" ]]
 }
+
+DB_LOCAL_PORT="${DB_LOCAL_PORT:-5432}"
 
 start_pf() {
   local name="$1" namespace="$2" resource="$3" ports="$4"
@@ -95,7 +100,13 @@ case "$ACTION" in
   start)
     if should_do minio; then start_pf minio minio-dev pod/minio "9000:9000 9090:9090"; fi
     if should_do argo;  then start_pf argo  argo      deployment/argo-server "2746:2746"; fi
-    if should_do db;    then start_pf db    syntheticdata statefulset/postgres "5432:5432"; fi
+    if should_do db; then
+      if ! [[ "$DB_LOCAL_PORT" =~ ^[0-9]+$ ]] || (( DB_LOCAL_PORT < 1 || DB_LOCAL_PORT > 65535 )); then
+        echo "[pf][error] DB_LOCAL_PORT inválido: '$DB_LOCAL_PORT' (usa 1-65535)." >&2
+        exit 1
+      fi
+      start_pf db syntheticdata statefulset/postgres "${DB_LOCAL_PORT}:5432"
+    fi
     ;;
   stop)
     if should_do minio; then stop_pf minio; fi
@@ -110,5 +121,3 @@ case "$ACTION" in
     exit 1
     ;;
 esac
-
-

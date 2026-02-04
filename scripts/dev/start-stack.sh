@@ -65,8 +65,15 @@ if [[ "$DO_BACKEND" -eq 1 ]]; then
   export MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
   export MINIO_SECURE="${MINIO_SECURE:-0}"
 
+  # Puerto local para Postgres en dev (port-forward). Default: 5432.
+  DB_LOCAL_PORT="${DB_LOCAL_PORT:-5432}"
+  if ! [[ "$DB_LOCAL_PORT" =~ ^[0-9]+$ ]] || (( DB_LOCAL_PORT < 1 || DB_LOCAL_PORT > 65535 )); then
+    echo "[stack][error] DB_LOCAL_PORT inválido: '$DB_LOCAL_PORT' (usa 1-65535)." >&2
+    exit 1
+  fi
+
   # DB (Postgres) defaults for local dev via port-forward
-  export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg://syntheticdata:syntheticdata@localhost:5432/syntheticdata}"
+  export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg://syntheticdata:syntheticdata@localhost:${DB_LOCAL_PORT}/syntheticdata}"
   export RUN_MIGRATIONS="${RUN_MIGRATIONS:-true}"
 
   # Sync de dependencias desde pyproject/uv.lock y lanzamiento con uv
@@ -99,5 +106,4 @@ else
   # Mantener el script vivo para que el trap pueda cerrar PF si es necesario
   while true; do sleep 3600; done
 fi
-
 

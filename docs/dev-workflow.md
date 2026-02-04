@@ -28,7 +28,7 @@ Antes de empezar, asegúrate de tener instalados:
 ```bash
 make dev
 ```
-Arranca: MinIO + Argo + Postgres en minikube, abre los puertos (9090/9000 para MinIO, 2746 para Argo, 5432 para DB) y lanza frontend (3000) y backend (8000).
+Arranca: MinIO + Argo + Postgres en minikube, abre los puertos (9090/9000 para MinIO, 2746 para Argo, `5432` para DB por defecto o `DB_LOCAL_PORT`) y lanza frontend (3000) y backend (8000).
 
 ---
 
@@ -111,7 +111,7 @@ make workflow            # envía workflow de ejemplo a Argo
 - MinIO API: `http://localhost:9000`
 - MinIO Console: `http://localhost:9090`
 - Argo UI: `https://localhost:2746`
-- Postgres: `localhost:5432`
+- Postgres: `localhost:5432` (o `localhost:$DB_LOCAL_PORT` si defines `DB_LOCAL_PORT`)
 - Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
 
@@ -120,6 +120,7 @@ make workflow            # envía workflow de ejemplo a Argo
 ### Variables útiles
 - `MINIKUBE_PROFILE` — perfil de minikube (por defecto `minikube`)
 - `K8S_CONTEXT` — contexto de kubectl (por defecto `minikube`)
+- `DB_LOCAL_PORT` — puerto local para el port-forward de Postgres (por defecto `5432`)
 - `DATABASE_URL` — conexión a Postgres (ej. `postgresql+psycopg://syntheticdata:syntheticdata@localhost:5432/syntheticdata`)
 - `RUN_MIGRATIONS` — crea tablas del registry al iniciar (`true`/`false`)
 
