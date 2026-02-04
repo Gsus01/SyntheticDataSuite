@@ -300,18 +300,42 @@ function extractTimestampSegment(text: string): { timestamp?: string; remainder:
 
 function formatInlineTimestamp(raw?: string): string | undefined {
   if (!raw) return undefined;
-  const normalized = raw.replace(",", ".").replace(" ", "T");
+
+  // 1. Normalizar: cambiar espacios por T y comas por puntos (típico de Python logging)
+  let normalized = raw.replace(",", ".").replace(" ", "T");
+
+  // 2. DETECCIÓN DE UTC:
+  // Si el string no termina en 'Z' y no tiene offset (ej: +01:00),
+  // le añadimos la 'Z' para decirle al navegador: "Oye, esto es hora UTC".
+  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(normalized);
+
+  if (!hasTimezone) {
+    normalized += "Z";
+  }
+
   const parsed = Date.parse(normalized);
+
   if (!Number.isNaN(parsed)) {
     const date = new Date(parsed);
+    // Al crear 'new Date' con un string UTC, .getHours() devuelve la hora convertida a local
     const hh = String(date.getHours()).padStart(2, "0");
     const mm = String(date.getMinutes()).padStart(2, "0");
     const ss = String(date.getSeconds()).padStart(2, "0");
     return `${hh}:${mm}:${ss}`;
   }
+
   const fallback = raw.match(/(\d{2}:\d{2}:\d{2})/);
   return fallback ? fallback[1] : raw;
 }
+
+function generateEntryKey(line: string, lineNumber: number): string {
+  const hash = line.split('').reduce((acc, char) => {
+    return ((acc << 5) - acc) + char.charCodeAt(0);
+  }, 0);
+  return `${hash}:${lineNumber}`;
+}
+
+
 
 function extractLevelSegment(text: string): { levelLabel: LogLevel; remainder: string } {
   const working = text.trimStart();
@@ -398,7 +422,11 @@ function simplifyKeyValueContent(text: string): string {
   return [base, extraText].filter(Boolean).join(" ").trim();
 }
 
-function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLogEntry[] {
+function buildLogEntries(
+  raw: string,
+  labelHints: Map<string, string>,
+  stableTimestamps: Map<string, string>
+): ParsedLogEntry[] {
   if (!raw) return [];
   const lines = raw.split(/\r?\n/);
   const total = lines.length;
@@ -406,6 +434,9 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
   const sliced = lines.slice(start);
   const assignments = new Map<string, string>();
   const baseCounts = new Map<string, number>();
+
+  // VARIABLE DE ESTADO PARA LA HERENCIA
+  let lastValidTimestamp: string | undefined = undefined;
 
   const assignLabel = (rawKey: string, baseLabel: string) => {
     const normalizedRaw = normalizeHintKey(rawKey || baseLabel);
@@ -427,9 +458,11 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
       const { nodeLabel: rawNodeLabel, remainder } = extractNodeSegment(cleanLine);
       const baseNodeLabel = deriveNodeLabel(rawNodeLabel, labelHints);
       const displayNodeLabel = assignLabel(rawNodeLabel, baseNodeLabel);
+
       const { timestamp, remainder: afterTimestamp } = extractTimestampSegment(remainder);
       const { levelLabel, remainder: finalContent } = extractLevelSegment(afterTimestamp);
       const simplified = simplifyKeyValueContent(finalContent);
+
       let contentText = simplified || finalContent.trim();
       if (!contentText) {
         contentText = afterTimestamp.trim();
@@ -437,6 +470,38 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
       if (!contentText) {
         contentText = cleanLine.trim();
       }
+
+      // LÓGICA DE TIMESTAMP CORREGIDA
+      let entryTimestamp: string | undefined;
+
+      if (timestamp) {
+        // Si la línea tiene timestamp explícito, lo usamos y actualizamos el "último visto"
+        entryTimestamp = formatInlineTimestamp(timestamp);
+        lastValidTimestamp = entryTimestamp;
+      } else {
+        // Si no tiene, intentamos usar el último válido conocido
+        entryTimestamp = lastValidTimestamp;
+
+        // Fallback defensivo: Si es la PRIMERA línea y no tiene timestamp, 
+        // buscamos en caché o (ahora sí) generamos uno actual solo como último recurso.
+        if (!entryTimestamp) {
+          const entryKey = generateEntryKey(cleanLine, lineNumber);
+          entryTimestamp = stableTimestamps.get(entryKey);
+
+          if (!entryTimestamp) {
+            // Solo aquí, si todo falla, generamos la hora actual
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, "0");
+            const mm = String(now.getMinutes()).padStart(2, "0");
+            const ss = String(now.getSeconds()).padStart(2, "0");
+            entryTimestamp = `${hh}:${mm}:${ss}`;
+            stableTimestamps.set(entryKey, entryTimestamp);
+          }
+          // Actualizamos lastValidTimestamp para las siguientes líneas
+          lastValidTimestamp = entryTimestamp;
+        }
+      }
+
       return {
         id: `${lineNumber}:${displayNodeLabel}:${idx}`,
         lineNumber,
@@ -444,7 +509,7 @@ function buildLogEntries(raw: string, labelHints: Map<string, string>): ParsedLo
         nodeColor: colorForNode(baseNodeLabel),
         levelLabel,
         content: contentText || "",
-        timestamp: formatInlineTimestamp(timestamp),
+        timestamp: entryTimestamp, // TypeScript ya sabe que es string
       };
     })
     .filter((entry, idx) => !(sliced[idx] === "" && idx === sliced.length - 1));
@@ -476,9 +541,12 @@ export default function WorkflowTerminal({
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const startYRef = React.useRef(0);
   const startHeightRef = React.useRef(0);
+  const stableTimestampsRef = React.useRef<Map<string, string>>(new Map());
+
 
   const labelHints = React.useMemo(() => buildNodeLabelHints(nodeSlugMap, nodes), [nodeSlugMap, nodes]);
-  const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints), [labelHints, logText]);
+  // const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints), [labelHints, logText]);
+  const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints, stableTimestampsRef.current), [labelHints, logText]);
   const lineCount = logEntries.length;
 
   const pollLogs = React.useCallback(async () => {
@@ -531,12 +599,20 @@ export default function WorkflowTerminal({
     }
   }, [isOpen, resolvedNamespace, workflowName]);
 
+  // React.useEffect(() => {
+  //   setLogText("");
+  //   setFetchError(null);
+  //   setLastUpdated(null);
+  //   setHasUnread(false);
+  // }, [workflowName]);
   React.useEffect(() => {
+    stableTimestampsRef.current.clear();
     setLogText("");
     setFetchError(null);
     setLastUpdated(null);
     setHasUnread(false);
   }, [workflowName]);
+
 
   React.useEffect(() => {
     if (!workflowName) {
@@ -672,11 +748,10 @@ export default function WorkflowTerminal({
             type="button"
             onClick={handleManualRefresh}
             disabled={!workflowName}
-            className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${
-              !workflowName
-                ? "cursor-not-allowed text-gray-600"
-                : "text-gray-200 hover:bg-gray-800 cursor-pointer"
-            }`}
+            className={`rounded border border-gray-700 px-2 py-1 text-[11px] uppercase tracking-wide transition ${!workflowName
+              ? "cursor-not-allowed text-gray-600"
+              : "text-gray-200 hover:bg-gray-800 cursor-pointer"
+              }`}
           >
             Actualizar
           </button>
