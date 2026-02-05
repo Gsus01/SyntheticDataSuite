@@ -174,12 +174,9 @@ class ArgoClient:
         if follow is not None:
             follow_value = "true" if follow else "false"
             params["follow"] = follow_value
-            params["logOptions.follow"] = follow_value
         if tail_lines is not None:
-            params["logOptions.tailLines"] = str(tail_lines)
             params["tailLines"] = str(tail_lines)
         if since_seconds is not None:
-            params["logOptions.sinceSeconds"] = str(since_seconds)
             params["sinceSeconds"] = str(since_seconds)
 
         response = self._request(

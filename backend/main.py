@@ -717,21 +717,6 @@ def _stream_object(
         obj.release_conn()
 
 
-def _extract_pod_names(workflow_obj: Dict[str, Any]) -> List[str]:
-    status_obj = workflow_obj.get("status") if isinstance(workflow_obj, dict) else None
-    nodes_obj = status_obj.get("nodes") if isinstance(status_obj, dict) else None
-    pod_entries: List[tuple[str, str]] = []
-    if isinstance(nodes_obj, dict):
-        for node in nodes_obj.values():
-            if not isinstance(node, dict):
-                continue
-            pod_name = node.get("podName")
-            if not isinstance(pod_name, str) or not pod_name:
-                continue
-            started_at = node.get("startedAt")
-            pod_entries.append((started_at or "", pod_name))
-    pod_entries.sort(key=lambda item: (item[0], item[1]))
-    return [name for _, name in pod_entries]
 
 
 def _normalize_argo_logs(raw: str) -> str:
@@ -739,7 +724,7 @@ def _normalize_argo_logs(raw: str) -> str:
         return raw
 
     normalized: List[tuple[str, bool]] = []
-    any_json = False
+    any_argo_json = False
 
     for line in raw.splitlines():
         stripped = line.strip()
@@ -764,20 +749,20 @@ def _normalize_argo_logs(raw: str) -> str:
                 pod_name = payload.get("podName") or payload.get("pod_name")
 
             if content is None:
-                continue
-
-            any_json = True
-            content_text = str(content)
-            if pod_name:
-                normalized.append((f"{pod_name}: {content_text}", True))
+                normalized.append((line, False))
             else:
-                normalized.append((content_text, True))
+                any_argo_json = True
+                content_text = str(content)
+                if pod_name:
+                    normalized.append((f"{pod_name}: {content_text}", True))
+                else:
+                    normalized.append((content_text, True))
             continue
 
         normalized.append((line, False))
 
-    if any_json:
-        return "\n".join(line for line, is_json in normalized if is_json)
+    if any_argo_json:
+        return "\n".join(line for line, _ in normalized)
     return "\n".join(line for line, _ in normalized)
 
 
@@ -1150,40 +1135,13 @@ def stream_workflow_logs(
                 follow=follow,
             )
         else:
-            try:
-                logs = client.get_workflow_logs(
-                    resolved_namespace,
-                    workflow_name,
-                    None,
-                    container="main",
-                    follow=follow,
-                )
-            except ArgoClientError:
-                logs = ""
-
-            if not logs:
-                workflow_obj = client.get_workflow(resolved_namespace, workflow_name)
-                pod_names = _extract_pod_names(workflow_obj)
-                if not pod_names:
-                    logs = ""
-                else:
-                    sections: List[str] = []
-                    for pod in pod_names:
-                        try:
-                            pod_logs = client.get_workflow_logs(
-                                resolved_namespace,
-                                workflow_name,
-                                pod,
-                                container="main",
-                            )
-                        except ArgoNotFoundError:
-                            continue
-                        if not pod_logs:
-                            continue
-                        for line in pod_logs.splitlines():
-                            if line.strip():
-                                sections.append(f"{pod}: {line}")
-                    logs = "\n".join(sections)
+            logs = client.get_workflow_logs(
+                resolved_namespace,
+                workflow_name,
+                None,
+                container="main",
+                follow=follow,
+            )
     except ArgoNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ArgoClientError as exc:
