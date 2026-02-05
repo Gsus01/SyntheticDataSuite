@@ -744,9 +744,6 @@ def _normalize_argo_logs(raw: str) -> str:
             if isinstance(result, dict):
                 content = result.get("content")
                 pod_name = result.get("podName") or result.get("pod_name")
-            elif isinstance(payload, dict):
-                content = payload.get("content")
-                pod_name = payload.get("podName") or payload.get("pod_name")
 
             if content is None:
                 normalized.append((line, False))

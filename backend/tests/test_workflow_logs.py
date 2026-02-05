@@ -15,6 +15,7 @@ def test_stream_workflow_logs_normalizes_json_lines(monkeypatch) -> None:
             return (
                 '{"result":{"content":"hello","podName":"pod-a"}}\n'
                 '{"level":"info","msg":"structured"}\n'
+                '{"level":"info","content":"structured-with-content","msg":"keep-me"}\n'
                 '{"result":{"content":"world","podName":"pod-b"}}\n'
                 'time="2024-01-01T00:00:00Z" level=info msg="plain" argo=true\n'
             )
@@ -32,6 +33,7 @@ def test_stream_workflow_logs_normalizes_json_lines(monkeypatch) -> None:
         [
             "pod-a: hello",
             '{"level":"info","msg":"structured"}',
+            '{"level":"info","content":"structured-with-content","msg":"keep-me"}',
             "pod-b: world",
             'time="2024-01-01T00:00:00Z" level=info msg="plain" argo=true',
         ]
