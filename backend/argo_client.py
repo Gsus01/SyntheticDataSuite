@@ -62,21 +62,26 @@ class ArgoClient:
         path: str,
         *,
         params: Optional[Dict[str, Any]] = None,
+        json_body: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
         accept: str = "application/json",
     ) -> httpx.Response:
         url = f"{self._base_url}{path}"
-        headers = {
+        request_headers = {
             "Accept": accept,
         }
         if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+            request_headers["Authorization"] = f"Bearer {self._token}"
+        if headers:
+            request_headers.update(headers)
 
         try:
             response = httpx.request(
                 method=method,
                 url=url,
-                headers=headers,
+                headers=request_headers,
                 params=params,
+                json=json_body,
                 timeout=self._timeout,
                 verify=self._verify,
             )
@@ -110,27 +115,72 @@ class ArgoClient:
         except ValueError as exc:
             raise ArgoClientError("Argo server returned invalid JSON payload.") from exc
 
+    def create_workflow(
+        self,
+        namespace: str,
+        workflow: Dict[str, Any],
+        *,
+        server_dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Create a workflow in the given namespace."""
+        payload = {
+            "namespace": namespace,
+            "serverDryRun": server_dry_run,
+            "workflow": workflow,
+        }
+        response = self._request(
+            "POST",
+            f"/api/v1/workflows/{namespace}",
+            json_body=payload,
+        )
+
+        if response.status_code == 401:
+            raise ArgoClientError("Unauthorized when creating workflow on Argo server (401).")
+
+        if response.status_code == 403:
+            raise ArgoClientError("Forbidden when creating workflow on Argo server (403).")
+
+        if not response.is_success:
+            text = response.text.strip()
+            detail = f"{response.status_code} {response.reason_phrase}"
+            if text:
+                detail = f"{detail}: {text}"
+            raise ArgoClientError(f"Argo server responded with error when creating workflow: {detail}")
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ArgoClientError("Argo server returned invalid JSON payload.") from exc
+
     def get_workflow_logs(
         self,
         namespace: str,
         workflow_name: str,
-        pod_name: str,
+        pod_name: Optional[str] = None,
         *,
         container: Optional[str] = None,
+        follow: Optional[bool] = None,
         tail_lines: Optional[int] = None,
         since_seconds: Optional[int] = None,
     ) -> str:
         """Fetch logs for a specific workflow pod."""
 
-        params: Dict[str, Any] = {
-            "podName": pod_name,
-        }
+        params: Dict[str, Any] = {}
+        if pod_name:
+            params["podName"] = pod_name
         if container:
+            params["container"] = container
             params["logOptions.container"] = container
+        if follow is not None:
+            follow_value = "true" if follow else "false"
+            params["follow"] = follow_value
+            params["logOptions.follow"] = follow_value
         if tail_lines is not None:
             params["logOptions.tailLines"] = str(tail_lines)
+            params["tailLines"] = str(tail_lines)
         if since_seconds is not None:
             params["logOptions.sinceSeconds"] = str(since_seconds)
+            params["sinceSeconds"] = str(since_seconds)
 
         response = self._request(
             "GET",
@@ -140,8 +190,12 @@ class ArgoClient:
         )
 
         if response.status_code == 404:
+            if pod_name:
+                raise ArgoNotFoundError(
+                    f"Logs for pod '{pod_name}' in workflow '{workflow_name}' not found in namespace '{namespace}'."
+                )
             raise ArgoNotFoundError(
-                f"Logs for pod '{pod_name}' in workflow '{workflow_name}' not found in namespace '{namespace}'."
+                f"Logs for workflow '{workflow_name}' not found in namespace '{namespace}'."
             )
 
         if response.status_code in {401, 403}:
@@ -156,5 +210,3 @@ class ArgoClient:
             raise ArgoClientError(f"Argo server responded with error when fetching logs: {detail}")
 
         return response.text or ""
-
-

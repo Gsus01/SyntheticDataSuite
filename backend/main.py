@@ -1,10 +1,7 @@
 import json
 import logging
 import os
-import shlex
-import subprocess
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -14,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
 from uuid import uuid4
 
+import yaml
 from minio.error import S3Error  # type: ignore[import-not-found]
 
 from minio_helper import (
@@ -90,7 +88,6 @@ class WorkflowSubmitResponse(BaseModel):
     bucket: str
     key: str
     manifest_filename: str = Field(..., alias="manifestFilename")
-    cli_output: Optional[str] = Field(None, alias="cliOutput")
 
 
 class WorkflowCompileResponse(BaseModel):
@@ -142,7 +139,6 @@ class WorkflowRecordResponse(BaseModel):
     last_bucket: Optional[str] = Field(None, alias="lastBucket")
     last_key: Optional[str] = Field(None, alias="lastKey")
     last_manifest_filename: Optional[str] = Field(None, alias="lastManifestFilename")
-    last_cli_output: Optional[str] = Field(None, alias="lastCliOutput")
     last_submitted_at: Optional[str] = Field(None, alias="lastSubmittedAt")
 
 
@@ -171,13 +167,6 @@ def _is_final_phase(phase: Optional[str]) -> bool:
     if not phase:
         return False
     return phase.strip().capitalize() in _FINAL_WORKFLOW_PHASES
-
-
-@dataclass
-class ArgoSubmissionResult:
-    workflow_name: str
-    namespace: str
-    cli_output: Optional[str]
 
 
 class OutputArtifactInfo(BaseModel):
@@ -704,70 +693,6 @@ def compile_workflow(payload: WorkflowGraphPayload) -> WorkflowCompileResponse:
     )
 
 
-def _extract_workflow_name(text: str) -> Optional[str]:
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("name:"):
-            return stripped.split(":", 1)[1].strip()
-    return None
-
-
-def _submit_workflow_via_cli(yaml_content: str) -> ArgoSubmissionResult:
-    namespace = os.getenv("ARGO_NAMESPACE", "argo")
-    argo_cli = os.getenv("ARGO_CLI_PATH", "argo")
-    extra_args = os.getenv("ARGO_SUBMIT_EXTRA_ARGS")
-
-    command = [argo_cli, "submit", "-", "--namespace", namespace, "--output", "json"]
-    if extra_args:
-        command.extend(shlex.split(extra_args))
-
-    try:
-        result = subprocess.run(
-            command,
-            input=yaml_content.encode("utf-8"),
-            capture_output=True,
-            check=True,
-        )
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Argo CLI no encontrado. Asegúrate de instalar 'argo' o configura ARGO_CLI_PATH."
-        ) from exc
-    except subprocess.CalledProcessError as exc:  # noqa:  BLE001 - necesitamos capturar errores específicos
-        stdout_text = exc.stdout.decode("utf-8", errors="ignore") if exc.stdout else ""
-        stderr_text = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else ""
-        combined = "\n".join(filter(None, [stdout_text.strip(), stderr_text.strip()]))
-        logger.error("Fallo al ejecutar 'argo submit': %s", combined or exc)
-        raise RuntimeError(combined or "Fallo al ejecutar 'argo submit'") from exc
-
-    stdout_text = result.stdout.decode("utf-8", errors="ignore").strip()
-    stderr_text = result.stderr.decode("utf-8", errors="ignore").strip()
-
-    workflow_name: Optional[str] = None
-
-    if stdout_text:
-        try:
-            parsed = json.loads(stdout_text)
-            workflow_name = parsed.get("metadata", {}).get("name")
-        except json.JSONDecodeError:
-            workflow_name = _extract_workflow_name(stdout_text)
-
-    if not workflow_name and stderr_text:
-        workflow_name = _extract_workflow_name(stderr_text)
-
-    if not workflow_name:
-        logger.warning(
-            "No se pudo extraer el nombre del workflow de la salida: %s", stdout_text
-        )
-        raise RuntimeError(
-            "No se pudo determinar el nombre del workflow desde la salida del comando 'argo submit'."
-        )
-
-    cli_output = stdout_text or stderr_text or None
-    return ArgoSubmissionResult(
-        workflow_name=workflow_name, namespace=namespace, cli_output=cli_output
-    )
-
-
 def _stat_object(client, bucket: str, key: str):
     try:
         return client.stat_object(bucket, key)
@@ -792,34 +717,68 @@ def _stream_object(
         obj.release_conn()
 
 
-def _fetch_workflow_logs_cli(
-    workflow_name: str,
-    namespace: str,
-    follow: bool = False,
-    pod_name: Optional[str] = None,
-) -> str:
-    """Execute `argo logs` and return its output."""
+def _extract_pod_names(workflow_obj: Dict[str, Any]) -> List[str]:
+    status_obj = workflow_obj.get("status") if isinstance(workflow_obj, dict) else None
+    nodes_obj = status_obj.get("nodes") if isinstance(status_obj, dict) else None
+    pod_entries: List[tuple[str, str]] = []
+    if isinstance(nodes_obj, dict):
+        for node in nodes_obj.values():
+            if not isinstance(node, dict):
+                continue
+            pod_name = node.get("podName")
+            if not isinstance(pod_name, str) or not pod_name:
+                continue
+            started_at = node.get("startedAt")
+            pod_entries.append((started_at or "", pod_name))
+    pod_entries.sort(key=lambda item: (item[0], item[1]))
+    return [name for _, name in pod_entries]
 
-    argo_cli = os.getenv("ARGO_CLI_PATH", "argo")
-    cmd = [argo_cli, "-n", namespace, "logs", workflow_name]
-    if pod_name:
-        cmd.append(pod_name)
-        cmd.extend(["-c", "main"])
-    if follow:
-        cmd.append("--follow")
 
-    cmd_display = " ".join(shlex.quote(part) for part in cmd)
-    logger.info("Ejecutando comando de logs: %s", cmd_display)
+def _normalize_argo_logs(raw: str) -> str:
+    if not raw:
+        return raw
 
-    try:
-        return subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            "Argo CLI no encontrado. Instala 'argo' o configura ARGO_CLI_PATH."
-        ) from exc
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.output or getattr(exc, "stderr", "") or str(exc)).strip()
-        raise RuntimeError(detail or "Fallo al ejecutar 'argo logs'.") from exc
+    normalized: List[tuple[str, bool]] = []
+    any_json = False
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                normalized.append((line, False))
+                continue
+
+            result = payload.get("result") if isinstance(payload, dict) else None
+            content = None
+            pod_name = None
+
+            if isinstance(result, dict):
+                content = result.get("content")
+                pod_name = result.get("podName") or result.get("pod_name")
+            elif isinstance(payload, dict):
+                content = payload.get("content")
+                pod_name = payload.get("podName") or payload.get("pod_name")
+
+            if content is None:
+                continue
+
+            any_json = True
+            content_text = str(content)
+            if pod_name:
+                normalized.append((f"{pod_name}: {content_text}", True))
+            else:
+                normalized.append((content_text, True))
+            continue
+
+        normalized.append((line, False))
+
+    if any_json:
+        return "\n".join(line for line, is_json in normalized if is_json)
+    return "\n".join(line for line, _ in normalized)
 
 
 @app.post("/workflow/submit", response_model=WorkflowSubmitResponse)
@@ -832,6 +791,8 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # pragma: no cover - unexpected
         raise HTTPException(status_code=500, detail=f"Failed to render workflow: {exc}")
+
+    resolved_namespace = os.getenv("ARGO_NAMESPACE", "argo")
 
     # Validate that all required Docker images exist in minikube
     template_names = [task.template_name for task in plan.tasks()]
@@ -875,28 +836,43 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
         ) from exc
 
     try:
-        submission = _submit_workflow_via_cli(yaml_content)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        manifest_obj = yaml.safe_load(yaml_content)
+    except yaml.YAMLError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to parse workflow manifest: {exc}"
+        ) from exc
+
+    try:
+        client = ArgoClient()
+        created = client.create_workflow(resolved_namespace, manifest_obj)
+    except ArgoClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    metadata = created.get("metadata") if isinstance(created, dict) else None
+    workflow_name = metadata.get("name") if isinstance(metadata, dict) else None
+    if not workflow_name:
+        raise HTTPException(
+            status_code=502,
+            detail="Argo server response missing workflow metadata.name.",
+        )
 
     node_slug_map = {node_plan.node_id: node_plan.slug for node_plan in plan.tasks()}
 
     logger.info(
         "Workflow %s enviado a Argo en namespace %s. Manifest almacenado en %s/%s",
-        submission.workflow_name,
-        submission.namespace,
+        workflow_name,
+        resolved_namespace,
         plan.bucket,
         manifest_key,
     )
 
     response = WorkflowSubmitResponse(
-        workflowName=submission.workflow_name,
-        namespace=submission.namespace,
+        workflowName=workflow_name,
+        namespace=resolved_namespace,
         nodeSlugMap=node_slug_map,
         bucket=plan.bucket,
         key=manifest_key,
         manifestFilename=filename,
-        cliOutput=submission.cli_output,
     )
 
     if payload.workflow_id:
@@ -904,12 +880,11 @@ def submit_workflow(payload: WorkflowSubmitPayload) -> WorkflowSubmitResponse:
         try:
             store.record_submission(
                 payload.workflow_id,
-                workflow_name=submission.workflow_name,
-                namespace=submission.namespace,
+                workflow_name=workflow_name,
+                namespace=resolved_namespace,
                 bucket=plan.bucket,
                 key=manifest_key,
                 manifest_filename=filename,
-                cli_output=submission.cli_output,
                 node_slug_map=node_slug_map,
             )
         except WorkflowDefinitionNotFoundError:
@@ -1157,7 +1132,7 @@ def stream_workflow_logs(
     resolved_namespace = namespace or os.getenv("ARGO_NAMESPACE", "argo")
 
     logger.info(
-        "Logs solicitados (CLI): workflow=%s ns=%s follow=%s pod=%s",
+        "Logs solicitados (API): workflow=%s ns=%s follow=%s pod=%s",
         workflow_name,
         resolved_namespace,
         follow,
@@ -1165,14 +1140,56 @@ def stream_workflow_logs(
     )
 
     try:
-        logs = _fetch_workflow_logs_cli(
-            workflow_name,
-            resolved_namespace,
-            follow=follow,
-            pod_name=pod_name,
-        )
-    except RuntimeError as exc:
+        client = ArgoClient()
+        if pod_name:
+            logs = client.get_workflow_logs(
+                resolved_namespace,
+                workflow_name,
+                pod_name,
+                container="main",
+                follow=follow,
+            )
+        else:
+            try:
+                logs = client.get_workflow_logs(
+                    resolved_namespace,
+                    workflow_name,
+                    None,
+                    container="main",
+                    follow=follow,
+                )
+            except ArgoClientError:
+                logs = ""
+
+            if not logs:
+                workflow_obj = client.get_workflow(resolved_namespace, workflow_name)
+                pod_names = _extract_pod_names(workflow_obj)
+                if not pod_names:
+                    logs = ""
+                else:
+                    sections: List[str] = []
+                    for pod in pod_names:
+                        try:
+                            pod_logs = client.get_workflow_logs(
+                                resolved_namespace,
+                                workflow_name,
+                                pod,
+                                container="main",
+                            )
+                        except ArgoNotFoundError:
+                            continue
+                        if not pod_logs:
+                            continue
+                        for line in pod_logs.splitlines():
+                            if line.strip():
+                                sections.append(f"{pod}: {line}")
+                    logs = "\n".join(sections)
+    except ArgoNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ArgoClientError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    logs = _normalize_argo_logs(logs)
 
     return WorkflowLogsResponse(
         workflowName=workflow_name,

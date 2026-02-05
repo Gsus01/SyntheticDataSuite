@@ -63,7 +63,6 @@ class StoredWorkflowRecord(BaseModel):
     last_bucket: Optional[str] = Field(None, alias="lastBucket")
     last_key: Optional[str] = Field(None, alias="lastKey")
     last_manifest_filename: Optional[str] = Field(None, alias="lastManifestFilename")
-    last_cli_output: Optional[str] = Field(None, alias="lastCliOutput")
     last_submitted_at: Optional[str] = Field(None, alias="lastSubmittedAt")
     version: int = 1
 
@@ -114,7 +113,6 @@ def _row_to_record(row: WorkflowRecordDB) -> StoredWorkflowRecord:
         lastBucket=row.last_bucket,
         lastKey=row.last_key,
         lastManifestFilename=row.last_manifest_filename,
-        lastCliOutput=row.last_cli_output,
         lastSubmittedAt=row.last_submitted_at.isoformat()
         if row.last_submitted_at
         else None,
@@ -216,7 +214,6 @@ class WorkflowStore:
         bucket: str,
         key: str,
         manifest_filename: str,
-        cli_output: Optional[str],
         node_slug_map: Dict[str, str],
     ) -> StoredWorkflowRecord:
         with db_session() as session:
@@ -232,7 +229,6 @@ class WorkflowStore:
             row.last_bucket = bucket
             row.last_key = key
             row.last_manifest_filename = manifest_filename
-            row.last_cli_output = cli_output
             row.last_submitted_at = now
             row.node_slug_map = node_slug_map or row.node_slug_map
             row.updated_at = now

@@ -2,7 +2,7 @@
 # =============================================================================
 # SyntheticDataSuite Backend
 # =============================================================================
-# FastAPI backend with Argo CLI for workflow orchestration
+# FastAPI backend with Argo Server API for workflow orchestration
 #
 # Build:
 #   eval $(minikube docker-env)
@@ -23,16 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# -----------------------------------------------------------------------------
-# Install Argo CLI
-# -----------------------------------------------------------------------------
-ARG ARGO_VERSION=v3.5.0
-RUN curl -sLO "https://github.com/argoproj/argo-workflows/releases/download/${ARGO_VERSION}/argo-linux-amd64.gz" \
-    && gunzip argo-linux-amd64.gz \
-    && chmod +x argo-linux-amd64 \
-    && mv argo-linux-amd64 /usr/local/bin/argo \
-    && argo version --short
 
 # -----------------------------------------------------------------------------
 # Install uv for fast Python dependency management
@@ -59,9 +49,7 @@ COPY . .
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     # Skip image validation since minikube/docker commands aren't available
-    SKIP_IMAGE_VALIDATION=true \
-    # Argo CLI location
-    ARGO_CLI_PATH=/usr/local/bin/argo
+    SKIP_IMAGE_VALIDATION=true
 
 # Expose the API port
 EXPOSE 8000
