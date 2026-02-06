@@ -174,8 +174,10 @@ export default function NodeInspector({
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
   const [outputArtifacts, setOutputArtifacts] = React.useState<OutputArtifactInfo[] | null>(null);
   const [outputError, setOutputError] = React.useState<string | null>(null);
+  const [isOutputArtifactsLoading, setIsOutputArtifactsLoading] = React.useState(false);
   const [downloadState, setDownloadState] = React.useState<Record<string, DownloadState>>({});
   const [previewStates, setPreviewStates] = React.useState<Record<string, OutputPreviewState>>({});
+  const outputArtifactsCacheRef = React.useRef<Record<string, OutputArtifactInfo[]>>({});
   const safeTrim = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
   const trimmedLabel = safeTrim(node?.data.label);
   const trimmedTemplate = safeTrim(node?.data.templateName);
@@ -195,27 +197,41 @@ export default function NodeInspector({
     setUploadError(null);
     setUploadSuccess(null);
     setUploading(false);
-    setOutputArtifacts(null);
-    setOutputError(null);
+    if (node?.type === NODE_TYPES.nodeOutput) {
+      const cachedArtifacts = outputArtifactsCacheRef.current[node.id];
+      setOutputArtifacts(cachedArtifacts ?? null);
+      setOutputError(null);
+      setIsOutputArtifactsLoading(true);
+    } else {
+      setOutputArtifacts(null);
+      setOutputError(null);
+      setIsOutputArtifactsLoading(false);
+    }
     setDownloadState({});
     setPreviewStates({});
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [isOpen, node?.id]);
+  }, [isOpen, node?.id, node?.type]);
 
   React.useEffect(() => {
     if (!isOpen || !node || node.type !== NODE_TYPES.nodeOutput) {
       setOutputArtifacts(null);
       setOutputError(null);
+      setIsOutputArtifactsLoading(false);
       setDownloadState({});
       setPreviewStates({});
       return;
     }
 
     const nodeId = node.id;
+    const cachedArtifacts = outputArtifactsCacheRef.current[nodeId];
+    if (cachedArtifacts) {
+      setOutputArtifacts(cachedArtifacts);
+    }
     let cancelled = false;
     async function loadArtifacts() {
+      setIsOutputArtifactsLoading(true);
       setOutputError(null);
       try {
         const artifacts = await getOutputArtifacts(
@@ -228,12 +244,19 @@ export default function NodeInspector({
         );
         if (!cancelled) {
           setOutputArtifacts(artifacts);
+          outputArtifactsCacheRef.current[nodeId] = artifacts;
         }
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Error obteniendo artefactos";
           setOutputError(message);
-          setOutputArtifacts([]);
+          if (!outputArtifactsCacheRef.current[nodeId]) {
+            setOutputArtifacts([]);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsOutputArtifactsLoading(false);
         }
       }
     }
@@ -745,7 +768,10 @@ export default function NodeInspector({
                   Artefactos de salida
                 </div>
                 {outputError && <span className="text-[11px] text-red-600 dark:text-red-400">{outputError}</span>}
-                {!outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
+                {!outputError &&
+                  !isOutputArtifactsLoading &&
+                  outputArtifacts !== null &&
+                  outputArtifacts.length === 0 && (
                   <span className="text-[11px] text-gray-500 dark:text-gray-400">
                     Conecta este nodo a la salida de otro para ver los artefactos generados.
                   </span>

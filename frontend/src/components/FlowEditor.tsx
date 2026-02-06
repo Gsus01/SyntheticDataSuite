@@ -5,6 +5,7 @@ import ReactFlow, {
   addEdge,
   Connection,
   Edge,
+  type NodeProps,
   Node,
   ReactFlowProvider,
   useEdgesState,
@@ -190,6 +191,10 @@ function EditorInner() {
   const showUnsyncedHint = Boolean(compiledState && isCompileDirty);
   const { isDark, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const OutputNodeWithSession = React.useCallback(
+    (props: NodeProps<FlowNodeData>) => <OutputNode {...props} sessionId={sessionId} />,
+    [sessionId]
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -1070,9 +1075,9 @@ function EditorInner() {
                 () => ({
                   [NODE_TYPES.nodeInput]: InputNode,
                   [NODE_TYPES.nodeDefault]: DefaultNode,
-                  [NODE_TYPES.nodeOutput]: OutputNode,
+                  [NODE_TYPES.nodeOutput]: OutputNodeWithSession,
                 }),
-                []
+                [OutputNodeWithSession]
               )}
               fitView
               className="bg-white dark:bg-gray-900 rf-instance"
