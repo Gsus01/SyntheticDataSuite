@@ -112,6 +112,34 @@ export type WorkflowSaveRequest = {
   nodeSlugMap?: Record<string, string>;
 };
 
+async function readApiError(response: Response): Promise<string> {
+  const raw = await response.text();
+  if (!raw) {
+    return `HTTP ${response.status}`;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      detail?: unknown;
+      message?: unknown;
+      error?: unknown;
+    };
+    if (typeof parsed.detail === "string" && parsed.detail.trim()) {
+      return parsed.detail;
+    }
+    if (typeof parsed.message === "string" && parsed.message.trim()) {
+      return parsed.message;
+    }
+    if (typeof parsed.error === "string" && parsed.error.trim()) {
+      return parsed.error;
+    }
+  } catch {
+    // Keep raw response body when it is not JSON.
+  }
+
+  return raw;
+}
+
 function serializeNodes(nodes: Node<FlowNodeData>[]) {
   return nodes.map(({ id, type, data }) => {
     const { runtimeStatus, artifactPorts, ...rest } = data;
@@ -201,7 +229,7 @@ export async function getOutputArtifacts(
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readApiError(response);
     throw new Error(message || `HTTP ${response.status}`);
   }
 

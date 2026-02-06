@@ -1,3 +1,5 @@
+import { Node, Edge } from 'reactflow';
+
 export type NodeArtifact = {
   bucket: string;
   key: string;
@@ -38,4 +40,10 @@ export type FlowNodeData = {
   uploadedArtifact?: NodeArtifact;
   runtimeStatus?: WorkflowNodeRuntimeStatus;
   artifactPorts?: FlowNodePorts;
+};
+
+export type CopiedFlowData = {
+  nodes: Node<FlowNodeData>[];
+  edges: Edge[];
+  timestamp: number;
 };
