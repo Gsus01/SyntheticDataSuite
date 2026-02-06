@@ -17,24 +17,26 @@ export function useTheme() {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const [isDark, setIsDark] = useState(() => {
-        // Check localStorage first, fallback to system preference
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('theme');
-            if (saved) return saved === 'dark';
-            return window.matchMedia('(prefers-color-scheme: dark)').matches;
-        }
-        return false;
-    });
+    const [isDark, setIsDark] = useState(false);
+    const [isThemeReady, setIsThemeReady] = useState(false);
 
     useEffect(() => {
+        const saved = localStorage.getItem('theme');
+        const initialTheme = saved
+            ? saved === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        setIsDark(initialTheme);
+        setIsThemeReady(true);
+    }, []);
+
+    useEffect(() => {
+        if (!isThemeReady) return;
+
         localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        if (typeof document !== 'undefined') {
-            const root = document.documentElement;
-            root.classList.toggle('dark', isDark);
-            root.classList.toggle('light', !isDark);
-        }
-    }, [isDark]);
+        const root = document.documentElement;
+        root.classList.toggle('dark', isDark);
+        root.classList.toggle('light', !isDark);
+    }, [isDark, isThemeReady]);
 
     return (
         <ThemeContext.Provider value={{
