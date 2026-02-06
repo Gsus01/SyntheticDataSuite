@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import ReactFlow, {
   addEdge,
   Connection,
@@ -38,6 +38,7 @@ import {
   type WorkflowSummary,
 } from "@/lib/workflow";
 import { normalizeStatusForDisplay } from "@/lib/runtime-status";
+import { useTheme } from "@/lib/theme-context";
 
 const INITIAL_PENDING_PHASE = "Pending";
 
@@ -187,6 +188,12 @@ function EditorInner() {
   const statusAbortRef = React.useRef(false);
   const isReadyToSend = Boolean(compiledState && !isCompileDirty);
   const showUnsyncedHint = Boolean(compiledState && isCompileDirty);
+  const { isDark, toggleTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const markDirty = useCallback(
     (scope: "all" | "compile" | "layout" = "all") => {
@@ -916,45 +923,47 @@ function EditorInner() {
   }, [applyWorkflowStatus, cancelStatusPolling, submitResult]);
 
   return (
-    <div className="flex h-screen w-full bg-gray-50">
+    <div className="flex h-screen w-full bg-gray-50 dark:bg-gray-900">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Modern Header */}
-        <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm z-10">
+        <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm z-10 dark:bg-gray-900 dark:border-gray-800">
           {/* Left: Workflow Info & File Actions */}
           <div className="flex items-center gap-6">
             <div className="flex flex-col">
-              <h1 className="text-sm font-bold text-gray-900 leading-tight">
+              {/* Texto adaptable al modo oscuro */}
+              <h1 className="text-sm font-bold text-gray-900 leading-tight dark:text-gray-100">
                 {activeWorkflow?.name || "Sin Título"}
               </h1>
-              <span className="text-[11px] font-medium text-gray-400">
+              <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500">
                 {activeWorkflow
                   ? `Editado ${formatDateLabel(activeWorkflow.updatedAt)}`
                   : "Borrador local"}
               </span>
             </div>
 
-            <div className="h-6 w-px bg-gray-200" aria-hidden="true" />
+            <div className="h-6 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
 
             <div className="flex items-center gap-1">
+              {/* BOTONES ACTUALIZADOS con clases dark: */}
               <button
                 type="button"
                 onClick={handleNewWorkflowClick}
-                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:border-gray-600"
               >
                 Nuevo
               </button>
               <button
                 type="button"
                 onClick={openLoadModal}
-                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:border-gray-600"
               >
                 Cargar
               </button>
               <button
                 type="button"
                 onClick={openSaveModal}
-                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="cursor-pointer rounded border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 hover:border-gray-300 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:border-gray-600"
               >
                 Guardar
               </button>
@@ -967,23 +976,21 @@ function EditorInner() {
             <div className="flex flex-col items-end justify-center space-y-0.5 mr-2 w-48 text-right relative">
               <div className="flex items-center justify-end gap-2 absolute right-0 bottom-0 transform translate-y-1/2 transition-all duration-300">
                 {hasUnsavedChanges && (
-                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 whitespace-nowrap">
+                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 whitespace-nowrap dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-500/30">
                     ● Sin guardar
                   </span>
                 )}
                 <span
                   className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset whitespace-nowrap ${isReadyToSend
-                    ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
-                    : "bg-slate-50 text-slate-600 ring-slate-500/10"
+                    ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-500/30"
+                    : "bg-slate-50 text-slate-600 ring-slate-500/10 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"
                     }`}
                 >
-                  {isReadyToSend
-                    ? "● Compilado"
-                    : "Pendiente compilar"}
+                  {isReadyToSend ? "● Compilado" : "Pendiente compilar"}
                 </span>
               </div>
               {showUnsyncedHint && (
-                <span className="text-[10px] text-amber-600 font-medium animate-pulse absolute right-0 -top-4 whitespace-nowrap">
+                <span className="text-[10px] text-amber-600 font-medium animate-pulse absolute right-0 -top-4 whitespace-nowrap dark:text-amber-400">
                   Cambios detectados: Recompila antes de enviar
                 </span>
               )}
@@ -995,11 +1002,11 @@ function EditorInner() {
                 type="button"
                 onClick={handleCompileClick}
                 disabled={compiling}
-                className="cursor-pointer inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="cursor-pointer inline-flex items-center justify-center rounded-md border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
               >
                 {compiling ? (
                   <>
-                    <svg className="mr-2 h-3 w-3 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24">
+                    <svg className="mr-2 h-3 w-3 animate-spin text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
@@ -1014,7 +1021,7 @@ function EditorInner() {
                 type="button"
                 onClick={handleSendClick}
                 disabled={!isReadyToSend || submitting}
-                className="cursor-pointer inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all"
+                className="cursor-pointer inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 disabled:bg-indigo-400 disabled:cursor-not-allowed transition-all dark:bg-indigo-600 dark:hover:bg-indigo-500"
               >
                 {submitting ? (
                   <>
@@ -1026,6 +1033,22 @@ function EditorInner() {
                   </>
                 ) : (
                   "Ejecutar Workflow"
+                )}
+              </button>
+
+              {/* Botón de Tema (Ya estaba bien, pero lo dejo aquí por contexto) */}
+              {/* Sustituye el botón actual por este bloque: */}
+              <button
+                onClick={toggleTheme}
+                className="ml-4 rounded-md p-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
+                suppressHydrationWarning // Esto ayuda a evitar advertencias extra
+              >
+                {/* Solo mostramos el icono si ya estamos montados en el cliente */}
+                {!mounted ? (
+                  // Un espacio vacío o icono por defecto mientras carga para evitar el salto
+                  <span className="opacity-0">☀️</span>
+                ) : (
+                  isDark ? "☀️" : "🌙"
                 )}
               </button>
             </div>
@@ -1062,7 +1085,7 @@ function EditorInner() {
                 []
               )}
               fitView
-              className="bg-white rf-instance"
+              className="bg-white dark:bg-gray-900 rf-instance"
             />
           </div>
           <NodeInspector
@@ -1086,169 +1109,175 @@ function EditorInner() {
           submitError={submitError}
         />
       </div>
-      {showNewConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl ring-1 ring-gray-900/5 transform transition-all">
-            <h3 className="text-lg font-semibold text-gray-900">¿Crear nuevo workflow?</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              Tienes cambios sin guardar. Si continúas, perderás el trabajo actual no guardado.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowNewConfirmModal(false)}
-                className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={confirmNewWorkflow}
-                className="cursor-pointer rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2"
-              >
-                Descartar y Crear Nuevo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showSaveModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Guardar workflow</h3>
-                <p className="text-sm text-gray-500">
-                  Especifica un nombre descriptivo para identificar el flujo.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="cursor-pointer text-gray-500 transition hover:text-gray-700"
-                onClick={closeSaveModal}
-                disabled={saving}
-              >
-                ✕
-              </button>
-            </div>
-            <label className="block text-sm font-medium text-gray-700">
-              Nombre
-              <input
-                type="text"
-                value={saveForm.name}
-                onChange={(event) =>
-                  setSaveForm((prev) => ({ ...prev, name: event.target.value }))
-                }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                placeholder="Workflow de ejemplo"
-              />
-            </label>
-            <label className="mt-4 block text-sm font-medium text-gray-700">
-              Descripción
-              <textarea
-                value={saveForm.description}
-                onChange={(event) =>
-                  setSaveForm((prev) => ({ ...prev, description: event.target.value }))
-                }
-                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                rows={3}
-                placeholder="Notas cortas sobre este grafo"
-              />
-            </label>
-            {saveNotice && <p className="mt-2 text-sm text-amber-600">{saveNotice}</p>}
-            {saveError && <p className="mt-2 text-sm text-rose-600">{saveError}</p>}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeSaveModal}
-                disabled={saving}
-                className="cursor-pointer rounded border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveWorkflow}
-                disabled={saving}
-                className="cursor-pointer rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 disabled:opacity-70"
-              >
-                {saving ? "Guardando…" : "Guardar"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showLoadModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Workflows guardados</h3>
-                <p className="text-sm text-gray-500">
-                  Selecciona un workflow para cargarlo en el lienzo actual.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
+      {
+        showNewConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm dark:bg-black/60">
+            <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl ring-1 ring-gray-900/5 transform transition-all dark:bg-gray-900 dark:ring-gray-800/60">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">¿Crear nuevo workflow?</h3>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                Tienes cambios sin guardar. Si continúas, perderás el trabajo actual no guardado.
+              </p>
+              <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => refreshWorkflowSummaries()}
-                  className="cursor-pointer rounded border border-gray-300 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1"
+                  onClick={() => setShowNewConfirmModal(false)}
+                  className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-900"
                 >
-                  Actualizar
+                  Cancelar
                 </button>
                 <button
                   type="button"
-                  onClick={closeLoadModal}
-                  className="cursor-pointer text-gray-500 transition hover:text-gray-700"
+                  onClick={confirmNewWorkflow}
+                  className="cursor-pointer rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                >
+                  Descartar y Crear Nuevo
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+      {
+        showSaveModal && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 dark:bg-black/60">
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl dark:bg-gray-900 dark:ring-1 dark:ring-gray-800/60">
+              <div className="mb-4 flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Guardar workflow</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Especifica un nombre descriptivo para identificar el flujo.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="cursor-pointer text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  onClick={closeSaveModal}
+                  disabled={saving}
                 >
                   ✕
                 </button>
               </div>
-            </div>
-            {summariesError && <p className="mb-3 text-sm text-rose-600">{summariesError}</p>}
-            <div className="max-h-[420px] overflow-y-auto">
-              {summariesLoading && (
-                <p className="py-6 text-center text-sm text-gray-500">Cargando…</p>
-              )}
-              {!summariesLoading && workflowSummaries.length === 0 && (
-                <p className="py-6 text-center text-sm text-gray-500">
-                  Aún no hay workflows guardados.
-                </p>
-              )}
-              <div className="grid gap-3">
-                {workflowSummaries.map((summary) => (
-                  <button
-                    key={summary.workflowId}
-                    type="button"
-                    onClick={() => handleLoadWorkflow(summary.workflowId)}
-                    disabled={loadingWorkflowId === summary.workflowId}
-                    className="cursor-pointer flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">{summary.name}</p>
-                      {summary.description && (
-                        <p className="text-xs text-gray-500">{summary.description}</p>
-                      )}
-                      <p className="text-xs text-gray-500">
-                        Actualizado {formatDateLabel(summary.updatedAt)}
-                      </p>
-                      {summary.lastWorkflowName && (
-                        <p className="text-xs text-gray-500">
-                          Última ejecución: {summary.lastWorkflowName}
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-                      {loadingWorkflowId === summary.workflowId ? "Cargando…" : "Cargar"}
-                    </span>
-                  </button>
-                ))}
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Nombre
+                <input
+                  type="text"
+                  value={saveForm.name}
+                  onChange={(event) =>
+                    setSaveForm((prev) => ({ ...prev, name: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+                  placeholder="Workflow de ejemplo"
+                />
+              </label>
+              <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Descripción
+                <textarea
+                  value={saveForm.description}
+                  onChange={(event) =>
+                    setSaveForm((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-500"
+                  rows={3}
+                  placeholder="Notas cortas sobre este grafo"
+                />
+              </label>
+              {saveNotice && <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">{saveNotice}</p>}
+              {saveError && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{saveError}</p>}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeSaveModal}
+                  disabled={saving}
+                  className="cursor-pointer rounded border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveWorkflow}
+                  disabled={saving}
+                  className="cursor-pointer rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 disabled:opacity-70 dark:focus:ring-offset-gray-900"
+                >
+                  {saving ? "Guardando…" : "Guardar"}
+                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+      {
+        showLoadModal && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 dark:bg-black/60">
+            <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-xl dark:bg-gray-900 dark:ring-1 dark:ring-gray-800/60">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Workflows guardados</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Selecciona un workflow para cargarlo en el lienzo actual.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => refreshWorkflowSummaries()}
+                    className="cursor-pointer rounded border border-gray-300 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-1 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-900"
+                  >
+                    Actualizar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeLoadModal}
+                    className="cursor-pointer text-gray-500 transition hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              {summariesError && <p className="mb-3 text-sm text-rose-600 dark:text-rose-400">{summariesError}</p>}
+              <div className="max-h-[420px] overflow-y-auto">
+                {summariesLoading && (
+                  <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">Cargando…</p>
+                )}
+                {!summariesLoading && workflowSummaries.length === 0 && (
+                  <p className="py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                    Aún no hay workflows guardados.
+                  </p>
+                )}
+                <div className="grid gap-3">
+                  {workflowSummaries.map((summary) => (
+                    <button
+                      key={summary.workflowId}
+                      type="button"
+                      onClick={() => handleLoadWorkflow(summary.workflowId)}
+                      disabled={loadingWorkflowId === summary.workflowId}
+                      className="cursor-pointer flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-gray-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/30"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{summary.name}</p>
+                        {summary.description && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{summary.description}</p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Actualizado {formatDateLabel(summary.updatedAt)}
+                        </p>
+                        {summary.lastWorkflowName && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Última ejecución: {summary.lastWorkflowName}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                        {loadingWorkflowId === summary.workflowId ? "Cargando…" : "Cargar"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 }
 

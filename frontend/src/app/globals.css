@@ -1,4 +1,87 @@
+/* Tailwind v4 with CSS variables for theming (dark mode by class) */
 @import "tailwindcss";
+
+/* Ensure `dark:` utilities respond to the `.dark` class (manual toggle) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Variables base (light mode) */
+:root {
+  --bg: 255, 255, 255;
+  --surface: 246, 246, 251;
+  --text: 15, 23, 42;
+  --muted: 107, 114, 128;
+  --border: 226, 232, 240;
+  --ring: 59, 130, 246;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  --primary: 14, 165, 233;
+  --secondary: 236, 72, 153;
+}
+
+/* OS preference: dark by default unless explicitly set to light */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg: 15, 23, 42;
+    --surface: 24, 25, 40;
+    --text: 226, 232, 240;
+    --muted: 160, 165, 176;
+    --border: 68, 68, 68;
+    --ring: 99, 102, 241;
+    --shadow: 0 4px 20px rgba(0, 0, 0, .5);
+    --primary: 96, 165, 250;
+    --secondary: 236, 72, 153;
+  }
+}
+
+/* Dark theme overrides (manual toggle on html) */
+html.dark {
+  --bg: 15, 23, 42;
+  --surface: 24, 25, 40;
+  --text: 226, 232, 240;
+  --muted: 160, 165, 176;
+  --border: 68, 68, 68;
+  --ring: 99, 102, 241;
+  --shadow: 0 4px 20px rgba(0, 0, 0, .5);
+  --primary: 96, 165, 250;
+  --secondary: 236, 72, 153;
+}
+
+/* Light theme override to beat OS dark when user selects light */
+html.light {
+  --bg: 255, 255, 255;
+  --surface: 246, 246, 251;
+  --text: 15, 23, 42;
+  --muted: 107, 114, 128;
+  --border: 226, 232, 240;
+  --ring: 59, 130, 246;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  --primary: 14, 165, 233;
+  --secondary: 236, 72, 153;
+}
+
+/* Apply base colors using CSS variables */
+html,
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--text));
+}
+
+*:focus-visible {
+  outline: 2px solid rgb(var(--ring));
+  outline-offset: 2px;
+}
+
+a {
+  color: rgb(var(--text));
+}
+
+/* Gradual migration note: consider introducing page/surface/text tokens in Tailwind
+   that map to these variables. */
+
+/* Nota: para que el cambio sea pleno sin tocar cientos de utilidades, considera
+   migrar gradualmente las piezas de UI a tokens que lean de estas variables, por ejemplo:
+   - bg-page / text-page / surface-page tokens (ver tailwind.config.ts) */
+
+/* @import "tailwindcss";
 
 :root {
   --background: #ffffff;
@@ -11,6 +94,12 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -25,7 +114,6 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* React Flow selection ring: delegate to our NodeCard */
 .rf-instance .react-flow__node.selected,
 .rf-instance .react-flow__node:focus {
   outline: none;
@@ -33,12 +121,14 @@ body {
 }
 
 @keyframes node-running-flash {
+
   0%,
   100% {
     transform: scale(0.9);
     opacity: 0.7;
     box-shadow: 0 0 6px rgba(251, 191, 36, 0.45);
   }
+
   50% {
     transform: scale(1.25);
     opacity: 1;
@@ -50,3 +140,5 @@ body {
   display: inline-block;
   animation: node-running-flash 0.85s ease-in-out infinite;
 }
+
+*/
