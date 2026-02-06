@@ -39,7 +39,7 @@ function onDragStartCatalog(event: React.DragEvent<HTMLDivElement>, tpl: Catalog
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <div className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+      <div className="mb-2 mt-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
         {title}
       </div>
       <div className="space-y-2">{children}</div>
@@ -95,17 +95,23 @@ export default function Sidebar() {
   }, [templates]);
 
   return (
-    <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800">
-      <div className="mb-3 font-medium text-gray-600 uppercase tracking-wide">Nodos</div>
+    <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+      <div className="mb-3 font-medium text-gray-600 uppercase tracking-wide dark:text-gray-400">
+        Nodos
+      </div>
+
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pr-1">
         {/* Catalog from backend */}
-        <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+        <div className="mb-2 mt-4 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Catálogo
         </div>
-        {loading && <div className="text-xs text-gray-500">Cargando catálogo…</div>}
+
+        {loading && <div className="text-xs text-gray-500 dark:text-gray-400">Cargando catálogo…</div>}
+
         {error && (
-          <div className="text-xs text-red-600">No se pudo cargar: {error}</div>
+          <div className="text-xs text-red-600 dark:text-red-400">No se pudo cargar: {error}</div>
         )}
+
         {!loading && !error && templates && (
           <div>
             {byType.input.length > 0 && (

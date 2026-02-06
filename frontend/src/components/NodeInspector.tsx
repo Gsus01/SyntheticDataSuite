@@ -105,24 +105,24 @@ function formatBytes(size: number | null | undefined): string {
 const PREVIEW_LINE_LIMIT = 100;
 
 const PHASE_BADGE_MAP: Record<string, string> = {
-  pending: "border-amber-200 bg-amber-50 text-amber-700",
-  waiting: "border-amber-200 bg-amber-50 text-amber-700",
-  queued: "border-amber-200 bg-amber-50 text-amber-700",
-  running: "border-sky-200 bg-sky-50 text-sky-700",
-  executing: "border-sky-200 bg-sky-50 text-sky-700",
-  inprogress: "border-sky-200 bg-sky-50 text-sky-700",
-  succeeded: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  completed: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  failed: "border-rose-200 bg-rose-50 text-rose-700",
-  error: "border-rose-200 bg-rose-50 text-rose-700",
-  terminated: "border-rose-200 bg-rose-50 text-rose-700",
-  cancelled: "border-rose-200 bg-rose-50 text-rose-700",
-  skipped: "border-gray-200 bg-gray-50 text-gray-600",
-  omitted: "border-gray-200 bg-gray-50 text-gray-600",
+  pending: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
+  waiting: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
+  queued: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
+  running: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-900/30 dark:text-sky-200",
+  executing: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-900/30 dark:text-sky-200",
+  inprogress: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-900/30 dark:text-sky-200",
+  succeeded: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200",
+  failed: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-900/30 dark:text-rose-200",
+  error: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-900/30 dark:text-rose-200",
+  terminated: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-900/30 dark:text-rose-200",
+  cancelled: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-900/30 dark:text-rose-200",
+  skipped: "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
+  omitted: "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400",
 };
 
-const DEFAULT_PHASE_BADGE = "border-gray-200 bg-gray-50 text-gray-600";
+const DEFAULT_PHASE_BADGE = "border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400";
 
 function getPhaseBadgeClasses(phase?: string | null): string {
   if (!phase) return DEFAULT_PHASE_BADGE;
@@ -550,7 +550,7 @@ export default function NodeInspector({
     return (
       <div className="flex flex-col gap-1">
         <textarea
-          className="min-h-[120px] w-full resize-y rounded border border-gray-300 bg-white p-2 font-mono text-xs text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="min-h-[120px] w-full resize-y rounded border border-gray-300 bg-white p-2 font-mono text-xs text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           value={current}
           onChange={(event) =>
             setStructuredInputs((prev) => ({
@@ -599,9 +599,9 @@ export default function NodeInspector({
           placeholder="Introduce JSON válido"
         />
         {error ? (
-          <span className="text-xs text-red-600">{error}</span>
+          <span className="text-xs text-red-600 dark:text-red-400">{error}</span>
         ) : (
-          <span className="text-xs text-gray-400">Edición como JSON</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Edición como JSON</span>
         )}
       </div>
     );
@@ -615,7 +615,7 @@ export default function NodeInspector({
       return (
         <input
           type="number"
-          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           value={value}
           onChange={(event) => {
             const raw = event.target.value;
@@ -634,7 +634,7 @@ export default function NodeInspector({
       const value = typeof activeValue === "boolean" ? String(activeValue) : "default";
       return (
         <select
-          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           value={value}
           onChange={(event) => {
             const next = event.target.value;
@@ -657,7 +657,7 @@ export default function NodeInspector({
       return (
         <input
           type="text"
-          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="w-full rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           value={value}
           onChange={(event) => updateParameter(key, event.target.value)}
           onBlur={(event) => {
@@ -700,18 +700,18 @@ export default function NodeInspector({
   };
 
   return (
-    <aside className="relative z-20 flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white text-sm text-gray-800 shadow-xl">
-      <div className="border-b border-gray-200 px-4 pb-4 pt-4">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Inspector</div>
+    <aside className="relative z-20 flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white text-sm text-gray-800 shadow-xl dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+      <div className="border-b border-gray-200 px-4 pb-4 pt-4 dark:border-gray-800">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Inspector</div>
         {node ? (
           <>
-            <div className="mt-1 text-base font-semibold text-gray-900">{displayLabel}</div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-gray-500">
-              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600">
+            <div className="mt-1 text-base font-semibold text-gray-900 dark:text-gray-100">{displayLabel}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                 Nodo <span className="font-mono text-[10px] uppercase tracking-normal">{componentId}</span>
               </span>
               {argoWorkflowId && argoWorkflowId !== "—" && (
-                <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600">
+                <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                   Argo <span className="font-mono text-[10px] uppercase tracking-normal">{argoWorkflowId}</span>
                 </span>
               )}
@@ -723,30 +723,30 @@ export default function NodeInspector({
                 </span>
               )}
               {showTemplateMeta && (
-                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600">
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:border-indigo-900 dark:bg-indigo-900/40 dark:text-indigo-300">
                   {trimmedTemplate}
                 </span>
               )}
             </div>
           </>
         ) : (
-          <div className="mt-1 text-sm text-gray-500">Selecciona un nodo.</div>
+          <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">Selecciona un nodo.</div>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {!node ? (
-          <div className="text-xs text-gray-500">Selecciona un nodo en el lienzo para editar sus parámetros.</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Selecciona un nodo en el lienzo para editar sus parámetros.</div>
         ) : (
           <div className="flex flex-col gap-4 pb-8">
             {isOutputNode && (
-              <div className="rounded border border-indigo-200 bg-indigo-50 p-3 text-xs text-gray-700">
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">
+              <div className="rounded border border-indigo-200 bg-indigo-50 p-3 text-xs text-gray-700 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-gray-300">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">
                   Artefactos de salida
                 </div>
-                {outputError && <span className="text-[11px] text-red-600">{outputError}</span>}
+                {outputError && <span className="text-[11px] text-red-600 dark:text-red-400">{outputError}</span>}
                 {!outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
-                  <span className="text-[11px] text-gray-500">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
                     Conecta este nodo a la salida de otro para ver los artefactos generados.
                   </span>
                 )}
@@ -756,35 +756,35 @@ export default function NodeInspector({
                   return (
                     <div
                       key={artifact.key}
-                      className="mt-2 rounded border border-indigo-100 bg-white p-2 text-[11px] text-gray-700 shadow-sm"
+                      className="mt-2 rounded border border-indigo-100 bg-white p-2 text-[11px] text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                     >
-                      <div className="text-xs font-semibold text-gray-600">
+                      <div className="text-xs font-semibold text-gray-600 dark:text-gray-200">
                         {artifact.sourceArtifactName || artifact.inputName}
                       </div>
-                      <div className="mt-1 space-y-1 text-[11px] text-gray-600">
+                      <div className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-gray-400">
                         <div>
-                          <span className="font-semibold text-gray-500">Bucket:</span> {artifact.bucket}
+                          <span className="font-semibold text-gray-500 dark:text-gray-500">Bucket:</span> {artifact.bucket}
                         </div>
                         <div className="break-all">
-                          <span className="font-semibold text-gray-500">Key:</span> {artifact.key}
+                          <span className="font-semibold text-gray-500 dark:text-gray-500">Key:</span> {artifact.key}
                         </div>
                         {artifact.size !== undefined && artifact.size !== null && (
                           <div>
-                            <span className="font-semibold text-gray-500">Tamaño:</span> {formatBytes(artifact.size)}
+                            <span className="font-semibold text-gray-500 dark:text-gray-500">Tamaño:</span> {formatBytes(artifact.size)}
                           </div>
                         )}
                         {artifact.contentType && (
                           <div>
-                            <span className="font-semibold text-gray-500">Content-Type:</span> {artifact.contentType}
+                            <span className="font-semibold text-gray-500 dark:text-gray-500">Content-Type:</span> {artifact.contentType}
                           </div>
                         )}
                         {artifact.sourceNodeId && (
                           <div>
-                            <span className="font-semibold text-gray-500">Origen:</span> {artifact.sourceNodeId}
+                            <span className="font-semibold text-gray-500 dark:text-gray-500">Origen:</span> {artifact.sourceNodeId}
                           </div>
                         )}
                         {!artifact.exists && (
-                          <div className="text-amber-600">
+                          <div className="text-amber-600 dark:text-amber-400">
                             El archivo aún no está disponible en MinIO. Ejecuta el workflow y vuelve a intentarlo.
                           </div>
                         )}
@@ -795,8 +795,8 @@ export default function NodeInspector({
                           onClick={() => handleDownloadArtifact(artifact)}
                           disabled={downloadStatus.loading}
                           className={`rounded border px-2 py-1 text-[11px] uppercase tracking-wide shadow-sm transition ${downloadStatus.loading
-                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500"
-                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"
+                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500 dark:border-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-400"
+                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
                             }`}
                         >
                           {downloadStatus.loading ? "Descargando…" : "Descargar"}
@@ -806,8 +806,8 @@ export default function NodeInspector({
                           onClick={() => handleTogglePreview(artifact)}
                           disabled={previewState?.loading}
                           className={`rounded border px-2 py-1 text-[11px] uppercase tracking-wide shadow-sm transition ${previewState?.loading
-                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500"
-                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50"
+                            ? "cursor-wait border-indigo-200 bg-indigo-100 text-indigo-500 dark:border-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-400"
+                            : "border-indigo-300 text-indigo-600 hover:border-indigo-400 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
                             }`}
                         >
                           {previewState?.loading
@@ -818,13 +818,13 @@ export default function NodeInspector({
                         </button>
                       </div>
                       {downloadStatus.error && (
-                        <div className="mt-1 text-[11px] text-red-600">{downloadStatus.error}</div>
+                        <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">{downloadStatus.error}</div>
                       )}
                       {previewState?.error && (
-                        <div className="mt-1 text-[11px] text-red-600">{previewState.error}</div>
+                        <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">{previewState.error}</div>
                       )}
                       {previewState?.content && !previewState.loading && !previewState.error && (
-                        <div className="mt-2 max-h-48 overflow-auto rounded bg-gray-900 p-2 font-mono text-[11px] leading-relaxed text-gray-100">
+                        <div className="mt-2 max-h-48 overflow-auto rounded bg-gray-900 p-2 font-mono text-[11px] leading-relaxed text-gray-100 border border-gray-700">
                           <pre className="whitespace-pre-wrap break-words text-gray-100">
                             {previewState.content}
                           </pre>
@@ -847,7 +847,7 @@ export default function NodeInspector({
             )}
             {shouldShowUpload && (
               <div
-                className={`rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 transition-colors ${uploading ? "cursor-default" : "cursor-pointer hover:border-indigo-300 hover:bg-indigo-50"
+                className={`rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 transition-colors dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 ${uploading ? "cursor-default" : "cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/20"
                   }`}
                 role="button"
                 tabIndex={0}
@@ -861,39 +861,39 @@ export default function NodeInspector({
                   disabled={uploading}
                   onChange={handleFileUpload}
                 />
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                   Archivo de entrada
                 </div>
                 <div className="flex flex-col gap-2">
-                  {uploading && <span className="text-xs text-gray-500">Subiendo…</span>}
-                  {uploadError && <span className="text-xs text-red-600">{uploadError}</span>}
+                  {uploading && <span className="text-xs text-gray-500 dark:text-gray-400">Subiendo…</span>}
+                  {uploadError && <span className="text-xs text-red-600 dark:text-red-400">{uploadError}</span>}
                   {uploadSuccess && !uploadError && (
-                    <span className="text-xs text-emerald-600">{uploadSuccess}</span>
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400">{uploadSuccess}</span>
                   )}
                   {uploadedArtifact ? (
-                    <div className="mt-1 space-y-1 text-[11px] text-gray-600">
+                    <div className="mt-1 space-y-1 text-[11px] text-gray-600 dark:text-gray-400">
                       <div>
-                        <span className="font-semibold text-gray-500">Último fichero:</span> {uploadedArtifact.originalFilename || "(sin nombre)"}
+                        <span className="font-semibold text-gray-500 dark:text-gray-500">Último fichero:</span> {uploadedArtifact.originalFilename || "(sin nombre)"}
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-500">Bucket:</span> {uploadedArtifact.bucket}
+                        <span className="font-semibold text-gray-500 dark:text-gray-500">Bucket:</span> {uploadedArtifact.bucket}
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-500">Key:</span> {uploadedArtifact.key}
+                        <span className="font-semibold text-gray-500 dark:text-gray-500">Key:</span> {uploadedArtifact.key}
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-500">Tamaño:</span> {formatBytes(uploadedArtifact.size)}
+                        <span className="font-semibold text-gray-500 dark:text-gray-500">Tamaño:</span> {formatBytes(uploadedArtifact.size)}
                       </div>
                     </div>
                   ) : (
-                    <span className="text-[11px] text-gray-500">Selecciona un fichero para subirlo a MinIO.</span>
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">Selecciona un fichero para subirlo a MinIO.</span>
                   )}
                 </div>
               </div>
             )}
 
             {keys.length === 0 ? (
-              <div className="text-xs text-gray-500">Este nodo no expone parámetros configurables.</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Este nodo no expone parámetros configurables.</div>
             ) : (
               keys.map((key) => {
                 const defaultValue = defaults[key];
@@ -904,15 +904,15 @@ export default function NodeInspector({
 
                 return (
                   <div key={key} className="flex flex-col gap-1">
-                    <label className="flex items-center text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    <label className="flex items-center text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       <span>{key}</span>
                       {showDefaultBadge && (
-                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+                        <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                           Por defecto
                         </span>
                       )}
                       {showCustomBadge && (
-                        <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-indigo-600">
+                        <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300">
                           Personalizado
                         </span>
                       )}
@@ -926,15 +926,15 @@ export default function NodeInspector({
                         onClick={() => handleReset(key)}
                         disabled={!isCustom}
                         className={`rounded border px-2 py-1 text-[11px] uppercase tracking-wide shadow-sm transition ${isCustom
-                          ? "border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-800"
-                          : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-300"
+                          ? "border-gray-300 text-gray-600 hover:border-gray-400 hover:text-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-gray-100"
+                          : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-600"
                           }`}
                       >
                         Reset
                       </button>
                     </div>
                     {defaultValue !== undefined && (
-                      <span className="text-[11px] text-gray-400">
+                      <span className="text-[11px] text-gray-400 dark:text-gray-500">
                         Predeterminado: {formatValue(defaultValue)}
                       </span>
                     )}
