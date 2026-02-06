@@ -928,10 +928,8 @@ function EditorInner() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Modern Header */}
         <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm z-10 dark:bg-gray-900 dark:border-gray-800">
-          {/* Left: Workflow Info & File Actions */}
           <div className="flex items-center gap-6">
             <div className="flex flex-col">
-              {/* Texto adaptable al modo oscuro */}
               <h1 className="text-sm font-bold text-gray-900 leading-tight dark:text-gray-100">
                 {activeWorkflow?.name || "Sin Título"}
               </h1>
@@ -945,7 +943,6 @@ function EditorInner() {
             <div className="h-6 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
 
             <div className="flex items-center gap-1">
-              {/* BOTONES ACTUALIZADOS con clases dark: */}
               <button
                 type="button"
                 onClick={handleNewWorkflowClick}
@@ -1035,17 +1032,12 @@ function EditorInner() {
                   "Ejecutar Workflow"
                 )}
               </button>
-
-              {/* Botón de Tema (Ya estaba bien, pero lo dejo aquí por contexto) */}
-              {/* Sustituye el botón actual por este bloque: */}
               <button
                 onClick={toggleTheme}
-                className="ml-4 rounded-md p-2 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300"
-                suppressHydrationWarning // Esto ayuda a evitar advertencias extra
+                className="ml-4 cursor-pointer rounded-md p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                suppressHydrationWarning
               >
-                {/* Solo mostramos el icono si ya estamos montados en el cliente */}
                 {!mounted ? (
-                  // Un espacio vacío o icono por defecto mientras carga para evitar el salto
                   <span className="opacity-0">☀️</span>
                 ) : (
                   isDark ? "☀️" : "🌙"
