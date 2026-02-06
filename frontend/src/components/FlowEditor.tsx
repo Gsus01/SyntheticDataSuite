@@ -56,6 +56,14 @@ function createPendingStatus(identifier: string, previous?: WorkflowNodeRuntimeS
 const STATUS_POLL_INTERVAL_FAST = 600;
 const STATUS_POLL_INTERVAL_WAITING = 450;
 const STATUS_POLL_INTERVAL_ERROR = 4000;
+const FLOW_DEFAULT_EDGE_OPTIONS = {
+  markerEnd: { type: MarkerType.ArrowClosed },
+};
+const FLOW_NODE_TYPES = {
+  [NODE_TYPES.nodeInput]: InputNode,
+  [NODE_TYPES.nodeDefault]: DefaultNode,
+  [NODE_TYPES.nodeOutput]: OutputNode,
+};
 
 let fallbackCounter = 0;
 const createNodeId = () => {
@@ -153,11 +161,17 @@ function sanitizeEdgesForSave(edges: Edge[]): unknown[] {
   }));
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || target.isContentEditable;
+}
+
 function EditorInner() {
   const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
-  const { project } = useReactFlow();
+  const { screenToFlowPosition } = useReactFlow();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = React.useState<Set<string>>(new Set());
   const [copiedData, setCopiedData] = React.useState<CopiedFlowData | null>(null);
@@ -421,16 +435,12 @@ function EditorInner() {
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const bounds = reactFlowWrapper.current?.getBoundingClientRect();
-      if (!bounds) return;
-
-      const position = project({
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      });
-
       const type = event.dataTransfer.getData(DND_MIME) as NodeTypeId;
       if (!type) return;
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
 
       const labelFromDrag = event.dataTransfer.getData("text/plain");
       const labelMap: Record<NodeTypeId, string> = {
@@ -484,12 +494,11 @@ function EditorInner() {
       setNodes((nds) => nds.concat(newNode));
       markDirty("all");
     },
-    [markDirty, project, setNodes, templateIndex]
+    [markDirty, screenToFlowPosition, setNodes, templateIndex]
   );
 
   const handleSelectionChange = useCallback(
-    ({ nodes: selected }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) => {
-      // Guardamos TODOS los IDs seleccionados en el Set
+    ({ nodes: selected = [] }: { nodes?: Node<FlowNodeData>[]; edges?: Edge[] }) => {
       const newSelectedIds = new Set(selected.map((n) => n.id));
       setSelectedNodeIds(newSelectedIds);
       if (selected.length === 1) {
@@ -574,24 +583,35 @@ function EditorInner() {
     });
     const newNodeIds = new Set(newNodes.map(n => n.id));
     setSelectedNodeIds(newNodeIds);
-    markDirty("layout");
+    markDirty("all");
   }, [copiedData, setNodes, setEdges, markDirty]);
 
-  const onKeyDown = useCallback((event: React.KeyboardEvent) => {
+  const handleGlobalKeyDown = useCallback((event: KeyboardEvent) => {
+    if (isEditableTarget(event.target)) return;
     const isCmd = event.ctrlKey || event.metaKey;
-    if (isCmd && event.key === 'c') {
-      console.log('Detectado CTRL+C. Nodos seleccionados:', selectedNodeIds.size);
-      if (selectedNodeIds.size > 0) {
-        copySelected();
-      }
+    if (!isCmd) return;
+
+    const key = event.key.toLowerCase();
+    if (key === "c") {
+      if (selectedNodeIds.size === 0) return;
+      event.preventDefault();
+      copySelected();
+      return;
     }
-    if (isCmd && event.key === 'v') {
-      console.log('Detectado CTRL+V. ¿Hay datos copiados?:', !!copiedData);
-      if (copiedData) {
-        pasteFromClipboard();
-      }
+
+    if (key === "v") {
+      if (!copiedData) return;
+      event.preventDefault();
+      pasteFromClipboard();
     }
-  }, [selectedNodeIds, copiedData, copySelected, pasteFromClipboard]);
+  }, [copiedData, copySelected, pasteFromClipboard, selectedNodeIds]);
+
+  React.useEffect(() => {
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, [handleGlobalKeyDown]);
 
   const handleCompileClick = useCallback(async () => {
     setCompiling(true);
@@ -1117,7 +1137,7 @@ function EditorInner() {
           </div>
         )}
         <div className="relative flex min-h-0 flex-1">
-          <div ref={reactFlowWrapper} className="flex-1 min-h-0 outline-none" tabIndex={0} onKeyDown={onKeyDown} autoFocus>
+          <div ref={reactFlowWrapper} className="flex-1 min-h-0 outline-none" tabIndex={0}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1127,20 +1147,8 @@ function EditorInner() {
               onDrop={onDrop}
               onDragOver={onDragOver}
               onSelectionChange={handleSelectionChange}
-              defaultEdgeOptions={useMemo(
-                () => ({
-                  markerEnd: { type: MarkerType.ArrowClosed },
-                }),
-                []
-              )}
-              nodeTypes={useMemo(
-                () => ({
-                  [NODE_TYPES.nodeInput]: InputNode,
-                  [NODE_TYPES.nodeDefault]: DefaultNode,
-                  [NODE_TYPES.nodeOutput]: OutputNode,
-                }),
-                []
-              )}
+              defaultEdgeOptions={FLOW_DEFAULT_EDGE_OPTIONS}
+              nodeTypes={FLOW_NODE_TYPES}
               fitView
               className="bg-white rf-instance"
             />
