@@ -40,7 +40,6 @@ class WorkflowRecordDB(WorkflowBase):
     last_manifest_filename: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True
     )
-    last_cli_output: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_submitted_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

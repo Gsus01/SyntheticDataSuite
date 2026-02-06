@@ -16,7 +16,6 @@ export type SubmitWorkflowResult = {
   bucket: string;
   key: string;
   manifestFilename: string;
-  cliOutput?: string | null;
 };
 
 export type CompileWorkflowResult = {
@@ -97,7 +96,6 @@ export type WorkflowRecord = WorkflowSummary & {
   lastBucket?: string | null;
   lastKey?: string | null;
   lastManifestFilename?: string | null;
-  lastCliOutput?: string | null;
 };
 
 export type WorkflowSaveRequest = {

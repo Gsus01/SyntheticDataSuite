@@ -753,11 +753,6 @@ export default function WorkflowTerminal({
                 <span className="truncate text-[10px] text-emerald-400">
                   {submitResult.bucket}/{submitResult.key}
                 </span>
-                {submitResult.cliOutput && (
-                  <span className="w-full truncate font-mono text-[10px] text-emerald-200">
-                    {submitResult.cliOutput}
-                  </span>
-                )}
               </div>
             )}
             {!submitResult && !submitError && (

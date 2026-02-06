@@ -592,7 +592,6 @@ function EditorInner() {
           bucket: record.lastBucket ?? "",
           key: record.lastKey ?? "",
           manifestFilename: record.lastManifestFilename ?? record.manifestFilename ?? "",
-          cliOutput: record.lastCliOutput ?? undefined,
         });
       } else {
         setSubmitResult(null);
@@ -804,7 +803,6 @@ function EditorInner() {
             lastBucket: result.bucket,
             lastKey: result.key,
             lastManifestFilename: result.manifestFilename,
-            lastCliOutput: result.cliOutput ?? null,
             nodeSlugMap: result.nodeSlugMap,
           }
           : prev

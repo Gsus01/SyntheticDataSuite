@@ -17,12 +17,11 @@ Antes de empezar, asegúrate de tener instalados:
 | Docker | Motor de contenedores | [Documentación oficial](https://docs.docker.com/engine/install/) |
 | minikube | Clúster Kubernetes local | [Documentación oficial](https://minikube.sigs.k8s.io/docs/start/) |
 | kubectl | CLI de Kubernetes | [Documentación oficial](https://kubernetes.io/docs/tasks/tools/) |
-| Argo CLI | Cliente de línea de comandos para Argo Workflows | [Releases en GitHub](https://github.com/argoproj/argo-workflows/releases) |
 | Node 18+ y npm | Entorno JavaScript para el frontend | [Documentación oficial](https://nodejs.org/) |
 | Python 3.10+ | Lenguaje para el backend | [Documentación oficial](https://www.python.org/downloads/) |
 | uv | Gestor de dependencias Python | [Documentación oficial](https://docs.astral.sh/uv/getting-started/installation/) |
 
-> **Nota:** Los scripts despliegan Argo Server dentro de minikube automáticamente, pero el backend necesita el binario `argo` instalado localmente para ejecutar `argo submit`.
+> **Nota:** Los scripts despliegan Argo Server dentro de minikube automáticamente, y el backend se comunica con `argo-server` vía API (no necesita el binario `argo`).
 
 #### Comando rápido (todo)
 ```bash
@@ -130,7 +129,7 @@ MINIKUBE_PROFILE=devbox K8S_CONTEXT=minikube \
   ./scripts/dev/k8s-up.sh
 ```
 
-### Backend, MinIO y Argo CLI
+### Backend, MinIO y Argo Server
 
 El backend necesita credenciales de MinIO para poder aceptar las subidas de archivos desde el frontend y para guardar el manifiesto del workflow antes de enviarlo a Argo. Las definiciones de workflows ahora se guardan en PostgreSQL. Las variables más importantes relacionadas con MinIO son:
 
@@ -157,15 +156,17 @@ sessions/<sessionId>/nodes/<nodeId>/<nombre>-<uuid>.<ext>
 
 El `sessionId` se genera en el navegador en cada carga del editor y `nodeId` corresponde al identificador del nodo (o su `templateName` cuando aplica). De esta forma todos los artefactos quedan agrupados por sesión y nodo sin necesidad de configurar buckets adicionales.
 
-Además, el backend ejecuta directamente `argo submit` usando el manifiesto generado. Para ello necesita acceso al binario `argo` y permite configurarlo mediante estas variables:
+Además, el backend envía el workflow al API de Argo Server usando el manifiesto generado. Para ello necesita acceso al `argo-server` y usa estas variables:
 
-- `ARGO_CLI_PATH` — ruta al binario (`argo` por defecto)
 - `ARGO_NAMESPACE` — namespace de Kubernetes donde se envían los workflows (`argo` por defecto)
-- `ARGO_SUBMIT_EXTRA_ARGS` — cadena opcional con flags extra (por ejemplo `--serviceaccount custom-sa`)
+- `ARGO_SERVER_BASE_URL` — URL base del servidor (por defecto `https://localhost:2746` si haces port-forward del `argo-server`)
+- `ARGO_SERVER_AUTH_TOKEN` — token Bearer opcional cuando el servidor exige autenticación
+- `ARGO_SERVER_INSECURE_SKIP_VERIFY` — ajústalo a `true` para omitir la verificación TLS en entornos dev/self-signed (se omite automáticamente cuando la URL apunta a `localhost`)
+- `ARGO_SERVER_TIMEOUT_SECONDS` — timeout en segundos para las peticiones al API (por defecto `10`)
 
 La respuesta del endpoint incluye el nombre del workflow lanzado, el namespace y la ruta dentro de MinIO donde se guardó el YAML (`sessions/<sessionId>/workflow/<filename>`), para poder consultarlo más adelante si es necesario.
 
-> **Nota:** Estas variables sólo aplican al envío de workflows; el seguimiento de estado usa la API de Argo Server y no depende del binario `argo`.
+> **Nota:** Estas variables se usan para envío, logs y seguimiento de estado vía `argo-server`.
 
 ### Enviar el DAG generado en el canvas
 
@@ -174,23 +175,16 @@ El editor (`frontend`) envía el flujo directamente a Argo usando el botón **En
 1. Construye el flujo en el canvas conectando nodos del catálogo.
 2. Sube los artefactos necesarios a través de los nodos de entrada.
 3. Pulsa **Enviar Workflow** (parte superior derecha). El frontend envía el grafo actual y el `sessionId` al backend.
-4. El backend genera el Workflow de Argo, guarda el YAML en MinIO bajo `sessions/<sessionId>/workflow/<filename>` y ejecuta `argo submit` en el namespace configurado.
+4. El backend genera el Workflow de Argo, guarda el YAML en MinIO bajo `sessions/<sessionId>/workflow/<filename>` y lo envía al API de `argo-server` en el namespace configurado.
 5. La interfaz muestra el nombre del workflow creado y la ubicación del manifiesto en MinIO para referencia rápida.
 
-Además, el editor dispone ahora de una terminal inferior plegable que se abre automáticamente tras cada envío y durante la ejecución. Los pods continúan archivando sus logs en MinIO, pero la interfaz los obtiene en tiempo (casi) real consultando la API de Argo (`GET /workflow/logs/stream`), que recibe el `workflowName`, un cursor Base64 incremental y parámetros opcionales como `namespace`, `tailLines` o `container`.
+Además, el editor dispone de una terminal inferior plegable que se abre automáticamente tras cada envío y durante la ejecución. La interfaz obtiene los logs consultando el backend (`GET /workflow/logs/stream`), que a su vez consulta el API de Argo Server y devuelve un snapshot de logs de los pods del workflow (con polling cada pocos segundos).
 
 > **Nota:** El backend genera plantillas embebidas para cada nodo del catálogo, así que no necesitas WorkflowTemplates registradas en el clúster.
 
 #### Seguimiento de estado con la API de Argo Server
 
-El backend también consulta el estado de cada workflow usando directamente el API REST expuesto por `argo-server`. De esta forma, el canvas puede colorear cada nodo según su fase actual (`Pendiente`, `En ejecución`, `Completado`, `Error`, etc.) mientras el workflow avanza.
-
-Variables de entorno asociadas:
-
-- `ARGO_SERVER_BASE_URL` — URL base del servidor (por defecto `https://localhost:2746` si haces port-forward del `argo-server`)
-- `ARGO_SERVER_AUTH_TOKEN` — token Bearer opcional cuando el servidor exige autenticación
-- `ARGO_SERVER_INSECURE_SKIP_VERIFY` — ajústalo a `true` para omitir la verificación TLS en entornos dev/self-signed (se omite automáticamente cuando la URL apunta a `localhost`)
-- `ARGO_SERVER_TIMEOUT_SECONDS` — timeout en segundos para las peticiones al API (por defecto `10`)
+El backend consulta el estado de cada workflow usando directamente el API REST expuesto por `argo-server`. De esta forma, el canvas puede colorear cada nodo según su fase actual (`Pendiente`, `En ejecución`, `Completado`, `Error`, etc.) mientras el workflow avanza.
 
 El frontend realiza polling periódico contra `GET /workflow/status`. Si el servidor todavía no registra el workflow y responde `404`, el backend lo traduce a un `null` y la UI reintenta automáticamente hasta que Argo lo cree. Una vez finalizada la ejecución, se conserva el último estado por nodo para revisión.
 

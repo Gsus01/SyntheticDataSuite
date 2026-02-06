@@ -95,4 +95,4 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
-            runAsNonRoot: false  # Argo CLI may need root for kubeconfig
+            runAsNonRoot: false
