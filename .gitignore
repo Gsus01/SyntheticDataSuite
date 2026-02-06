@@ -1,14 +1,38 @@
-model
-.next
-node_modules
-.node
-__pycache__
+# Root-generated artifacts
+/model/
+
+# Node/Next
+node_modules/
+.next/
+.node/
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.coverage
+.coverage.*
+.venv/
+venv/
+env/
+
+# Temp files
 /.tmp/
-tmp
-lib
+/tmp/
+*.tmp
+
+# Environment files
 .env
 .env.*
+!.env.example
+!.env.*.example
 .envrc
+
+# Generated sessions
 components/generated-sessions/
 
 # Unity debug symbols (not needed for runtime)
