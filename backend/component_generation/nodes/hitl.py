@@ -48,8 +48,46 @@ def _pretty_plan(plan: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _emit_event(state: PipelineState, event_type: str, payload: Dict[str, Any] | None = None) -> None:
+    callback = state.get("event_callback")
+    if not callable(callback):
+        return
+    try:
+        callback(event_type, payload or {})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("hitl: failed to emit event %s: %s", event_type, exc)
+
+
 def node_hitl(state: PipelineState) -> Dict[str, Any]:
     plan = state.get("plan") or {}
+    hitl_mode = str(state.get("hitl_mode") or "cli").strip().lower()
+
+    if hitl_mode == "api":
+        _emit_event(state, "plan_proposed", {"plan": plan})
+        if state.get("auto_approve"):
+            logger.info("hitl: auto-approving plan (api mode)")
+            _emit_event(state, "resumed", {"approved": True})
+            return {"approved": True, "feedback": ""}
+
+        decision_getter = state.get("hitl_decision_getter")
+        if not callable(decision_getter):
+            raise RuntimeError("HITL API mode requires a callable hitl_decision_getter")
+
+        _emit_event(state, "waiting_decision", {"plan": plan})
+        decision = decision_getter(plan)
+        approved = bool(decision.get("approved"))
+        feedback = (decision.get("feedback") or "").strip()
+        if not approved and not feedback:
+            feedback = "Revise the plan: improve component boundaries and IO/params."
+        _emit_event(
+            state,
+            "resumed",
+            {"approved": approved, "hasFeedback": bool(feedback)},
+        )
+        if approved:
+            return {"approved": True, "feedback": ""}
+        return {"approved": False, "feedback": feedback}
+
     print(_pretty_plan(plan))
 
     if state.get("auto_approve") or not sys.stdin.isatty():

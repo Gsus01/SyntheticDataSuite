@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import ReactFlow, {
   addEdge,
@@ -967,6 +968,12 @@ function EditorInner() {
               >
                 Guardar
               </button>
+              <Link
+                href="/component-generation"
+                className="cursor-pointer rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 shadow-sm hover:bg-indigo-100 hover:text-indigo-800 hover:border-indigo-400 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20 dark:hover:border-indigo-400/60"
+              >
+                Generar Componentes
+              </Link>
             </div>
           </div>
 

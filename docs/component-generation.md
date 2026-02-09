@@ -1,8 +1,8 @@
-# Component Generation (Offline Prototype)
+# Component Generation (CLI + API)
 
-This module provides a local, offline pipeline for generating component stubs
-from source files. It is **not** wired to the backend API yet; the goal is to
-validate the flow and artifacts before integrating it into the UI/API.
+This module provides a pipeline for generating component stubs from source
+files. It can run from CLI and is also exposed through backend API endpoints
+consumed by the Next.js UI route `/component-generation`.
 
 ---
 
@@ -25,8 +25,10 @@ flowchart TD
 
 ## Current scope
 
-- Offline CLI-only execution.
 - LangGraph pipeline with Analyst -> HITL -> Developer -> Tester -> Repair.
+- Execution via CLI and via API (`/component-generation/runs` + SSE events).
+- UI flow in frontend (`/component-generation`) with plan approval, live graph,
+  timeline events, and hard cancel.
 - Integration step is a dry-run placeholder (unless `--run-integration`).
   - Session scripts are generated to build images and register components.
 
@@ -269,10 +271,14 @@ Analyst rule note:
 
 ## Next steps (planned)
 
-1. Replace heuristic Analyst with LLM-based plan generation.
-2. Implement Developer with LLM output + template scaffolds.
-3. Add Integration step (build image, push, register in DB).
-4. Wire into backend API + frontend UI.
+1. Add persistence/history endpoints for listing previous runs in UI.
+2. Add integration automation (build image, push, register in DB).
+3. Add auth/multi-tenant controls for run ownership and visibility.
+
+---
+
+## Structured output fallback
+
 Disable structured outputs (for models that do not support `json_schema`):
 
 ```bash

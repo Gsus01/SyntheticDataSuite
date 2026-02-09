@@ -39,3 +39,8 @@ class PipelineState(TypedDict, total=False):
     structured_output: bool
     disable_llm: bool
     repair_context: str
+
+    # HITL API execution hooks
+    hitl_mode: Optional[str]
+    event_callback: Optional[Any]
+    hitl_decision_getter: Optional[Any]
