@@ -40,6 +40,7 @@ type OutputNodeProps = NodeProps<FlowNodeData> & {
 
 const HIDDEN_PREVIEW_STATE: HiddenPreviewState = { kind: "hidden" };
 const outputPreviewCache = new Map<string, OutputPreviewState>();
+const PENDING_PREVIEW_RETRY_MS = 2000;
 
 function buildHandleTooltip(port: { name: string; path?: string | null }, type: "target" | "source") {
   const direction = type === "source" ? "Salida" : "Entrada";
@@ -224,6 +225,12 @@ function useOutputImagePreview({
     prunePreviewCache(new Set(nodes.map((node) => node.id)));
   }, [nodes]);
 
+  React.useEffect(() => {
+    return () => {
+      writePreviewCache(nodeId, HIDDEN_PREVIEW_STATE);
+    };
+  }, [nodeId]);
+
   const setAndCacheState = React.useCallback(
     (nextState: OutputPreviewState) => {
       writePreviewCache(nodeId, nextState);
@@ -242,7 +249,17 @@ function useOutputImagePreview({
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
     const isActive = () => !cancelled && requestIdRef.current === requestId;
+
+    const scheduleRetry = () => {
+      if (retryTimeout || !isActive()) return;
+      retryTimeout = setTimeout(() => {
+        retryTimeout = null;
+        if (!isActive()) return;
+        void run();
+      }, PENDING_PREVIEW_RETRY_MS);
+    };
 
     const run = async () => {
       const incomingEdges = edgesRef.current.filter((edge) => edge.target === nodeId);
@@ -277,6 +294,7 @@ function useOutputImagePreview({
             kind: "loading",
             message: "Esperando archivo de imagen…",
           });
+          scheduleRetry();
           return;
         }
 
@@ -357,6 +375,10 @@ function useOutputImagePreview({
     void run();
     return () => {
       cancelled = true;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+        retryTimeout = null;
+      }
     };
   }, [graphSignature, nodeId, sessionId, setAndCacheState, templateName]);
 
