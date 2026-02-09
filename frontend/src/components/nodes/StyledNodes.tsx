@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   Handle,
   Position,
@@ -161,6 +162,19 @@ function serializeEdgesSignature(edges: Edge[]): string {
   return JSON.stringify(compact);
 }
 
+function serializeExecutionSignature(nodes: Node<FlowNodeData>[]): string {
+  const compact = nodes
+    .map((node) => ({
+      id: node.id,
+      phase: node.data.runtimeStatus?.phase ?? null,
+      startedAt: node.data.runtimeStatus?.startedAt ?? null,
+      finishedAt: node.data.runtimeStatus?.finishedAt ?? null,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  return JSON.stringify(compact);
+}
+
 function writePreviewCache(nodeId: string, nextState: OutputPreviewState) {
   const previous = outputPreviewCache.get(nodeId);
   if (
@@ -244,6 +258,10 @@ function useOutputImagePreview({
     () => `${serializeNodesSignature(nodes)}|${serializeEdgesSignature(edges)}`,
     [edges, nodes]
   );
+  const executionSignature = React.useMemo(
+    () => serializeExecutionSignature(nodes),
+    [nodes]
+  );
 
   React.useEffect(() => {
     const requestId = requestIdRef.current + 1;
@@ -280,9 +298,10 @@ function useOutputImagePreview({
 
         if (!isActive()) return;
 
-        const imageArtifact = artifacts.find((artifact) =>
+        const imageArtifacts = artifacts.filter((artifact) =>
           isImageArtifact(artifact.contentType, artifact.key)
         );
+        const imageArtifact = imageArtifacts.find((artifact) => artifact.exists) ?? imageArtifacts[0];
 
         if (!imageArtifact) {
           setAndCacheState(HIDDEN_PREVIEW_STATE);
@@ -380,7 +399,7 @@ function useOutputImagePreview({
         retryTimeout = null;
       }
     };
-  }, [graphSignature, nodeId, sessionId, setAndCacheState, templateName]);
+  }, [executionSignature, graphSignature, nodeId, sessionId, setAndCacheState, templateName]);
 
   return previewState;
 }
@@ -404,7 +423,13 @@ function BaseNode({ data, selected, variant }: NodeProps<FlowNodeData> & { varia
   );
 }
 
-function OutputPreviewPanel({ state }: { state: OutputPreviewState }) {
+function OutputPreviewPanel({
+  state,
+  onOpenImage,
+}: {
+  state: OutputPreviewState;
+  onOpenImage: () => void;
+}) {
   if (state.kind === "hidden") {
     return null;
   }
@@ -413,9 +438,17 @@ function OutputPreviewPanel({ state }: { state: OutputPreviewState }) {
     <div className="rounded-md border border-gray-300 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-900">
       <div className="flex h-[150px] w-full items-center justify-center overflow-hidden rounded border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
         {state.kind === "ready" ? (
-          // Blob URLs are generated at runtime; Next/Image optimization does not apply here.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={state.imageUrl} alt={`Vista previa de ${state.artifactLabel}`} className="h-full w-full object-contain" />
+          <button
+            type="button"
+            onClick={onOpenImage}
+            className="nodrag nopan h-full w-full cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-gray-900"
+            aria-label={`Ampliar vista previa de ${state.artifactLabel}`}
+            title="Ampliar vista previa"
+          >
+            {/* Blob URLs are generated at runtime; Next/Image optimization does not apply here. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={state.imageUrl} alt={`Vista previa de ${state.artifactLabel}`} className="h-full w-full object-contain" />
+          </button>
         ) : (
           <div
             className={`px-3 text-center text-[11px] leading-relaxed ${
@@ -441,6 +474,7 @@ function OutputPreviewPanel({ state }: { state: OutputPreviewState }) {
 export function OutputNode({ data, selected, id, sessionId }: OutputNodeProps) {
   const label = data.label || "Output Node";
   const resolvedPorts = resolvePorts(data, "output");
+  const [isImageModalOpen, setIsImageModalOpen] = React.useState(false);
   const previewState = useOutputImagePreview({
     nodeId: id,
     sessionId,
@@ -448,22 +482,89 @@ export function OutputNode({ data, selected, id, sessionId }: OutputNodeProps) {
   });
   const showPreviewPanel = previewState.kind !== "hidden";
 
+  React.useEffect(() => {
+    if (!isImageModalOpen || previewState.kind === "ready") return;
+    setIsImageModalOpen(false);
+  }, [isImageModalOpen, previewState]);
+
+  React.useEffect(() => {
+    if (!isImageModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIsImageModalOpen(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isImageModalOpen]);
+
+  const modalContent =
+    isImageModalOpen && previewState.kind === "ready" ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Vista previa ampliada de ${previewState.artifactLabel}`}
+        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm dark:bg-black/70"
+        onClick={() => setIsImageModalOpen(false)}
+      >
+        <div
+          className="w-full max-w-5xl rounded-lg border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {previewState.artifactLabel}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsImageModalOpen(false)}
+              className="rounded border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-900"
+              aria-label="Cerrar vista previa ampliada"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="max-h-[80vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-950/40">
+            {/* Blob URLs are generated at runtime; Next/Image optimization does not apply here. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={previewState.imageUrl}
+              alt={`Vista ampliada de ${previewState.artifactLabel}`}
+              className="max-h-[76vh] w-full object-contain"
+            />
+          </div>
+        </div>
+      </div>
+    ) : null;
+
   return (
-    <div className="py-3">
-      <div className={showPreviewPanel ? "w-[260px] space-y-2" : undefined}>
-        <div className="relative">
-          {renderHandles(resolvedPorts.inputs, "target", Position.Left)}
-          <NodeCard
-            label={label}
-            variant="output"
-            tone={data.tone as NodeTone | undefined}
-            selected={selected}
-            status={data.runtimeStatus}
+    <>
+      <div className="py-3">
+        <div className={showPreviewPanel ? "w-[260px] space-y-2" : undefined}>
+          <div className="relative">
+            {renderHandles(resolvedPorts.inputs, "target", Position.Left)}
+            <NodeCard
+              label={label}
+              variant="output"
+              tone={data.tone as NodeTone | undefined}
+              selected={selected}
+              status={data.runtimeStatus}
+            />
+          </div>
+          <OutputPreviewPanel
+            state={previewState}
+            onOpenImage={() => {
+              if (previewState.kind !== "ready") return;
+              setIsImageModalOpen(true);
+            }}
           />
         </div>
-        <OutputPreviewPanel state={previewState} />
       </div>
-    </div>
+      {modalContent && typeof document !== "undefined" ? createPortal(modalContent, document.body) : null}
+    </>
   );
 }
 
