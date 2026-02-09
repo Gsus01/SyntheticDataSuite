@@ -34,13 +34,31 @@ type DownloadState = {
   error: string | null;
 };
 
-type OutputPreviewState = {
+type TextOutputPreviewState = {
+  kind: "text";
   loading: boolean;
   error: string | null;
   content: string | null;
   truncated: boolean;
   contentType?: string | null;
-  limitedLines?: boolean;
+  limitedLines: boolean;
+};
+
+type ImageOutputPreviewState = {
+  kind: "image";
+  loading: boolean;
+  error: string | null;
+  imageUrl: string | null;
+  artifactLabel: string;
+  contentType?: string | null;
+};
+
+type OutputPreviewState = TextOutputPreviewState | ImageOutputPreviewState;
+
+type InspectorImageModalState = {
+  imageUrl: string;
+  artifactLabel: string;
+  contentType?: string | null;
 };
 
 function extractFilenameFromDisposition(disposition: string | null): string | null {
@@ -103,6 +121,63 @@ function formatBytes(size: number | null | undefined): string {
 }
 
 const PREVIEW_LINE_LIMIT = 100;
+
+function isImageArtifact(contentType?: string | null, key?: string | null): boolean {
+  const normalizedType = (contentType || "").toLowerCase();
+  if (normalizedType.startsWith("image/")) {
+    return true;
+  }
+
+  const hasImageExtension = /\.(png|jpe?g|gif|webp|bmp|svg|tiff?)$/i.test(key || "");
+  if (!hasImageExtension) {
+    return false;
+  }
+
+  return normalizedType === "" || normalizedType === "application/octet-stream";
+}
+
+function getArtifactLabel(artifact: OutputArtifactInfo): string {
+  return artifact.sourceArtifactName || artifact.inputName || artifact.key.split("/").pop() || "image";
+}
+
+function revokeImagePreviewUrl(state?: OutputPreviewState | null) {
+  if (state?.kind === "image" && state.imageUrl) {
+    URL.revokeObjectURL(state.imageUrl);
+  }
+}
+
+function revokeAllImagePreviewUrls(states: Record<string, OutputPreviewState>) {
+  Object.values(states).forEach((state) => {
+    revokeImagePreviewUrl(state);
+  });
+}
+
+function replacePreviewState(
+  states: Record<string, OutputPreviewState>,
+  key: string,
+  nextState: OutputPreviewState | null
+): Record<string, OutputPreviewState> {
+  const previous = states[key];
+  if (
+    previous?.kind === "image" &&
+    previous.imageUrl &&
+    (nextState?.kind !== "image" || nextState.imageUrl !== previous.imageUrl)
+  ) {
+    URL.revokeObjectURL(previous.imageUrl);
+  }
+
+  if (nextState === null) {
+    if (!(key in states)) return states;
+    const next = { ...states };
+    delete next[key];
+    return next;
+  }
+
+  return {
+    ...states,
+    [key]: nextState,
+  };
+}
 
 const PHASE_BADGE_MAP: Record<string, string> = {
   pending: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200",
@@ -174,8 +249,12 @@ export default function NodeInspector({
   const [uploadSuccess, setUploadSuccess] = React.useState<string | null>(null);
   const [outputArtifacts, setOutputArtifacts] = React.useState<OutputArtifactInfo[] | null>(null);
   const [outputError, setOutputError] = React.useState<string | null>(null);
+  const [isOutputArtifactsLoading, setIsOutputArtifactsLoading] = React.useState(false);
   const [downloadState, setDownloadState] = React.useState<Record<string, DownloadState>>({});
   const [previewStates, setPreviewStates] = React.useState<Record<string, OutputPreviewState>>({});
+  const [imageModalState, setImageModalState] = React.useState<InspectorImageModalState | null>(null);
+  const outputArtifactsCacheRef = React.useRef<Record<string, OutputArtifactInfo[]>>({});
+  const previewStatesRef = React.useRef<Record<string, OutputPreviewState>>({});
   const safeTrim = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
   const trimmedLabel = safeTrim(node?.data.label);
   const trimmedTemplate = safeTrim(node?.data.templateName);
@@ -188,6 +267,42 @@ export default function NodeInspector({
     Boolean(trimmedTemplate) &&
     trimmedTemplate.toLowerCase() !== displayLabel.toLowerCase();
 
+  const closeImageModal = React.useCallback(() => {
+    setImageModalState(null);
+  }, []);
+
+  const clearPreviewStates = React.useCallback(() => {
+    setImageModalState(null);
+    setPreviewStates((prev) => {
+      revokeAllImagePreviewUrls(prev);
+      return {};
+    });
+  }, []);
+
+  React.useEffect(() => {
+    previewStatesRef.current = previewStates;
+  }, [previewStates]);
+
+  React.useEffect(() => {
+    if (!imageModalState) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeImageModal();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeImageModal, imageModalState]);
+
+  React.useEffect(() => {
+    return () => {
+      revokeAllImagePreviewUrls(previewStatesRef.current);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (!isOpen) return;
     setStructuredInputs({});
@@ -195,27 +310,41 @@ export default function NodeInspector({
     setUploadError(null);
     setUploadSuccess(null);
     setUploading(false);
-    setOutputArtifacts(null);
-    setOutputError(null);
+    if (node?.type === NODE_TYPES.nodeOutput) {
+      const cachedArtifacts = outputArtifactsCacheRef.current[node.id];
+      setOutputArtifacts(cachedArtifacts ?? null);
+      setOutputError(null);
+      setIsOutputArtifactsLoading(true);
+    } else {
+      setOutputArtifacts(null);
+      setOutputError(null);
+      setIsOutputArtifactsLoading(false);
+    }
     setDownloadState({});
-    setPreviewStates({});
+    clearPreviewStates();
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [isOpen, node?.id]);
+  }, [clearPreviewStates, isOpen, node?.id, node?.type]);
 
   React.useEffect(() => {
     if (!isOpen || !node || node.type !== NODE_TYPES.nodeOutput) {
       setOutputArtifacts(null);
       setOutputError(null);
+      setIsOutputArtifactsLoading(false);
       setDownloadState({});
-      setPreviewStates({});
+      clearPreviewStates();
       return;
     }
 
     const nodeId = node.id;
+    const cachedArtifacts = outputArtifactsCacheRef.current[nodeId];
+    if (cachedArtifacts) {
+      setOutputArtifacts(cachedArtifacts);
+    }
     let cancelled = false;
     async function loadArtifacts() {
+      setIsOutputArtifactsLoading(true);
       setOutputError(null);
       try {
         const artifacts = await getOutputArtifacts(
@@ -228,12 +357,19 @@ export default function NodeInspector({
         );
         if (!cancelled) {
           setOutputArtifacts(artifacts);
+          outputArtifactsCacheRef.current[nodeId] = artifacts;
         }
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Error obteniendo artefactos";
           setOutputError(message);
-          setOutputArtifacts([]);
+          if (!outputArtifactsCacheRef.current[nodeId]) {
+            setOutputArtifacts([]);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setIsOutputArtifactsLoading(false);
         }
       }
     }
@@ -243,7 +379,7 @@ export default function NodeInspector({
     return () => {
       cancelled = true;
     };
-  }, [edges, isOpen, node, node?.id, node?.type, nodes, sessionId]);
+  }, [clearPreviewStates, edges, isOpen, node, node?.id, node?.type, nodes, sessionId]);
 
   const clearParameter = React.useCallback(
     (key: string) => {
@@ -485,58 +621,139 @@ export default function NodeInspector({
     async (artifact: OutputArtifactInfo) => {
       const key = artifact.key;
       const current = previewStates[key];
+      const hasVisiblePreview =
+        Boolean(current) &&
+        !current?.loading &&
+        !current?.error &&
+        ((current.kind === "text" && Boolean(current.content)) ||
+          (current.kind === "image" && Boolean(current.imageUrl)));
 
-      if (current && current.content && !current.loading && !current.error) {
-        setPreviewStates((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
+      if (hasVisiblePreview && current) {
+        if (current.kind === "image" && current.imageUrl && imageModalState?.imageUrl === current.imageUrl) {
+          closeImageModal();
+        }
+        setPreviewStates((prev) => replacePreviewState(prev, key, null));
         return;
       }
 
-      setPreviewStates((prev) => ({
-        ...prev,
-        [key]: {
+      const artifactLabel = getArtifactLabel(artifact);
+      const shouldRenderImagePreview = isImageArtifact(artifact.contentType, artifact.key);
+
+      if (shouldRenderImagePreview) {
+        setPreviewStates((prev) => {
+          const previous = prev[key];
+          const previousImageUrl = previous?.kind === "image" ? previous.imageUrl : null;
+          return replacePreviewState(prev, key, {
+            kind: "image",
+            loading: true,
+            error: null,
+            imageUrl: previousImageUrl,
+            artifactLabel,
+            contentType: artifact.contentType ?? (previous?.kind === "image" ? previous.contentType : null),
+          });
+        });
+
+        try {
+          const downloadUrl = buildApiUrl("/artifacts/download");
+          downloadUrl.searchParams.set("bucket", artifact.bucket);
+          downloadUrl.searchParams.set("key", artifact.key);
+
+          const response = await fetch(downloadUrl.toString());
+          if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+              const text = await response.text();
+              if (text) detail = text;
+            } catch {
+              // ignore
+            }
+            throw new Error(detail);
+          }
+
+          const headerContentType = response.headers.get("Content-Type");
+          const blob = await response.blob();
+          const resolvedContentType = blob.type || headerContentType || artifact.contentType || null;
+          if (!isImageArtifact(resolvedContentType, artifact.key)) {
+            throw new Error("El artefacto no es una imagen previsualizable");
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          if (current?.kind === "image" && current.imageUrl && imageModalState?.imageUrl === current.imageUrl) {
+            closeImageModal();
+          }
+
+          setPreviewStates((prev) =>
+            replacePreviewState(prev, key, {
+              kind: "image",
+              loading: false,
+              error: null,
+              imageUrl: objectUrl,
+              artifactLabel,
+              contentType: resolvedContentType,
+            })
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Error obteniendo previsualización";
+          if (current?.kind === "image" && current.imageUrl && imageModalState?.imageUrl === current.imageUrl) {
+            closeImageModal();
+          }
+          setPreviewStates((prev) =>
+            replacePreviewState(prev, key, {
+              kind: "image",
+              loading: false,
+              error: message,
+              imageUrl: null,
+              artifactLabel,
+              contentType: artifact.contentType ?? null,
+            })
+          );
+        }
+        return;
+      }
+
+      setPreviewStates((prev) => {
+        const previous = prev[key];
+        return replacePreviewState(prev, key, {
+          kind: "text",
           loading: true,
           error: null,
-          content: current?.content ?? null,
-          truncated: current?.truncated ?? false,
-          contentType: current?.contentType,
-          limitedLines: current?.limitedLines ?? false,
-        },
-      }));
+          content: previous?.kind === "text" ? previous.content : null,
+          truncated: previous?.kind === "text" ? previous.truncated : false,
+          contentType: previous?.kind === "text" ? previous.contentType : artifact.contentType ?? null,
+          limitedLines: previous?.kind === "text" ? previous.limitedLines : false,
+        });
+      });
 
       try {
         const result = await previewArtifact(artifact.bucket, artifact.key);
         const { content: limitedContent, limitedLines } = limitPreviewLines(result.content);
-        setPreviewStates((prev) => ({
-          ...prev,
-          [key]: {
+        setPreviewStates((prev) =>
+          replacePreviewState(prev, key, {
+            kind: "text",
             loading: false,
             error: null,
             content: limitedContent,
             truncated: result.truncated || limitedLines,
-            contentType: result.contentType ?? undefined,
+            contentType: result.contentType ?? null,
             limitedLines,
-          },
-        }));
+          })
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : "Error obteniendo previsualización";
-        setPreviewStates((prev) => ({
-          ...prev,
-          [key]: {
+        setPreviewStates((prev) =>
+          replacePreviewState(prev, key, {
+            kind: "text",
             loading: false,
             error: message,
             content: null,
             truncated: false,
-            contentType: undefined,
+            contentType: null,
             limitedLines: false,
-          },
-        }));
+          })
+        );
       }
     },
-    [previewStates]
+    [closeImageModal, imageModalState?.imageUrl, previewStates]
   );
 
   if (!isOpen) {
@@ -700,7 +917,8 @@ export default function NodeInspector({
   };
 
   return (
-    <aside className="relative z-20 flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white text-sm text-gray-800 shadow-xl dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+    <>
+      <aside className="relative z-20 flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-gray-200 bg-white text-sm text-gray-800 shadow-xl dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
       <div className="border-b border-gray-200 px-4 pb-4 pt-4 dark:border-gray-800">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Inspector</div>
         {node ? (
@@ -745,7 +963,10 @@ export default function NodeInspector({
                   Artefactos de salida
                 </div>
                 {outputError && <span className="text-[11px] text-red-600 dark:text-red-400">{outputError}</span>}
-                {!outputError && (!outputArtifacts || outputArtifacts.length === 0) && (
+                {!outputError &&
+                  !isOutputArtifactsLoading &&
+                  outputArtifacts !== null &&
+                  outputArtifacts.length === 0 && (
                   <span className="text-[11px] text-gray-500 dark:text-gray-400">
                     Conecta este nodo a la salida de otro para ver los artefactos generados.
                   </span>
@@ -753,6 +974,12 @@ export default function NodeInspector({
                 {outputArtifacts?.map((artifact) => {
                   const downloadStatus = downloadState[artifact.key] ?? { loading: false, error: null };
                   const previewState = previewStates[artifact.key];
+                  const isPreviewVisible =
+                    Boolean(previewState) &&
+                    !previewState.loading &&
+                    !previewState.error &&
+                    ((previewState.kind === "text" && Boolean(previewState.content)) ||
+                      (previewState.kind === "image" && Boolean(previewState.imageUrl)));
                   return (
                     <div
                       key={artifact.key}
@@ -812,7 +1039,7 @@ export default function NodeInspector({
                         >
                           {previewState?.loading
                             ? "Cargando…"
-                            : previewState?.content && !previewState.error
+                            : isPreviewVisible
                               ? "Ocultar"
                               : "Previsualizar"}
                         </button>
@@ -823,12 +1050,15 @@ export default function NodeInspector({
                       {previewState?.error && (
                         <div className="mt-1 text-[11px] text-red-600 dark:text-red-400">{previewState.error}</div>
                       )}
-                      {previewState?.content && !previewState.loading && !previewState.error && (
+                      {previewState?.kind === "text" &&
+                        previewState.content &&
+                        !previewState.loading &&
+                        !previewState.error && (
                         <div className="mt-2 max-h-48 overflow-auto rounded bg-gray-900 p-2 font-mono text-[11px] leading-relaxed text-gray-100 border border-gray-700">
                           <pre className="whitespace-pre-wrap break-words text-gray-100">
                             {previewState.content}
                           </pre>
-                          {previewState?.limitedLines && (
+                          {previewState.limitedLines && (
                             <span className="mt-1 block text-[10px] text-gray-400">
                               Se muestran las primeras {PREVIEW_LINE_LIMIT} líneas del artefacto.
                             </span>
@@ -839,6 +1069,35 @@ export default function NodeInspector({
                             </span>
                           )}
                         </div>
+                      )}
+                      {previewState?.kind === "image" &&
+                        previewState.imageUrl &&
+                        !previewState.loading &&
+                        !previewState.error && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageModalState({
+                              imageUrl: previewState.imageUrl,
+                              artifactLabel: previewState.artifactLabel,
+                              contentType: previewState.contentType ?? null,
+                            })
+                          }
+                          className="mt-2 w-full cursor-zoom-in overflow-hidden rounded border border-dashed border-indigo-200 bg-indigo-50 p-1 transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:border-indigo-700 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/30 dark:focus:ring-offset-gray-900"
+                          aria-label={`Ampliar vista previa de ${previewState.artifactLabel}`}
+                          title="Ampliar vista previa"
+                        >
+                          {/* Blob URLs are generated at runtime; Next/Image optimization does not apply here. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={previewState.imageUrl}
+                            alt={`Vista previa de ${previewState.artifactLabel}`}
+                            className="h-40 w-full object-contain"
+                          />
+                          <div className="mt-1 truncate text-[10px] uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                            {previewState.artifactLabel}
+                          </div>
+                        </button>
                       )}
                     </div>
                   );
@@ -945,6 +1204,51 @@ export default function NodeInspector({
           </div>
         )}
       </div>
-    </aside>
+      </aside>
+      {imageModalState ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Vista previa ampliada de ${imageModalState.artifactLabel}`}
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 px-4 py-6 backdrop-blur-sm dark:bg-black/70"
+          onClick={closeImageModal}
+        >
+          <div
+            className="w-full max-w-5xl rounded-lg border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  {imageModalState.artifactLabel}
+                </div>
+                {imageModalState.contentType ? (
+                  <div className="mt-1 truncate text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                    Content-Type: {imageModalState.contentType}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={closeImageModal}
+                className="rounded border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-600 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 dark:focus:ring-offset-gray-900"
+                aria-label="Cerrar vista previa ampliada"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="max-h-[80vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-950/40">
+              {/* Blob URLs are generated at runtime; Next/Image optimization does not apply here. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageModalState.imageUrl}
+                alt={`Vista ampliada de ${imageModalState.artifactLabel}`}
+                className="max-h-[76vh] w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
