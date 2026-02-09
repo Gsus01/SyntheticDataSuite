@@ -66,12 +66,15 @@ def test_run_manager_autoapprove_finishes(tmp_path: Path) -> None:
     assert final["status"] == "succeeded"
     assert final["reviewStatus"] == "OK"
     assert len(final["generatedIndex"]) >= 1
+    assert isinstance(final.get("logTail"), list)
+    assert any("run_manager" in line for line in final["logTail"])
 
     events, terminal = manager.get_events_since(run_id, 0)
     event_types = {event["type"] for event in events}
     assert terminal is True
     assert "run_started" in event_types
     assert "run_finished" in event_types
+    assert "log_line" in event_types
 
 
 def test_run_manager_requires_hitl_decision(tmp_path: Path) -> None:
@@ -87,6 +90,8 @@ def test_run_manager_requires_hitl_decision(tmp_path: Path) -> None:
     waiting = _wait_until(manager, run_id, lambda item: item["status"] == "waiting_decision")
     assert waiting["awaitingDecision"] is True
     assert waiting["pendingPlan"] is not None
+    assert isinstance(waiting.get("pendingPrettyPlan"), str)
+    assert "Proposed plan" in waiting["pendingPrettyPlan"]
 
     manager.submit_decision(run_id, approved=False, feedback="Refina el plan")
     waiting_again = _wait_until(

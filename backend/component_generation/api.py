@@ -60,12 +60,14 @@ class RunResponse(BaseModel):
     options: Dict[str, Any] = Field(default_factory=dict)
     node_states: Dict[str, RunNodeState] = Field(default_factory=dict, alias="nodeStates")
     pending_plan: Dict[str, Any] | None = Field(default=None, alias="pendingPlan")
+    pending_pretty_plan: str | None = Field(default=None, alias="pendingPrettyPlan")
     generated_index: Dict[str, Dict[str, str]] = Field(
         default_factory=dict, alias="generatedIndex"
     )
     review_report: str | None = Field(default=None, alias="reviewReport")
     review_status: str | None = Field(default=None, alias="reviewStatus")
     integration_report: str | None = Field(default=None, alias="integrationReport")
+    log_tail: List[str] = Field(default_factory=list, alias="logTail")
     error: str | None = None
     can_cancel: bool = Field(default=False, alias="canCancel")
     awaiting_decision: bool = Field(default=False, alias="awaitingDecision")

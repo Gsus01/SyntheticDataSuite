@@ -33,10 +33,12 @@ export type ComponentGenerationRunSnapshot = {
   options: Record<string, unknown>;
   nodeStates: Record<string, ComponentGenerationNodeState>;
   pendingPlan?: Record<string, unknown> | null;
+  pendingPrettyPlan?: string | null;
   generatedIndex: Record<string, Record<string, string>>;
   reviewReport?: string | null;
   reviewStatus?: string | null;
   integrationReport?: string | null;
+  logTail?: string[];
   error?: string | null;
   canCancel: boolean;
   awaitingDecision: boolean;
@@ -47,7 +49,12 @@ export type ComponentGenerationRunEvent = {
   seq: number;
   timestamp: string;
   type: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> & {
+    line?: string;
+    level?: string;
+    source?: string;
+    prettyPlan?: string;
+  };
 };
 
 export type CreateComponentGenerationRunRequest = {
@@ -186,6 +193,7 @@ const EVENT_TYPES = [
   "decision_submitted",
   "decision_received",
   "resumed",
+  "log_line",
   "run_finished",
   "run_failed",
   "run_canceled",

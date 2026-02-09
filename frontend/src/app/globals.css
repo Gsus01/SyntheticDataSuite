@@ -73,3 +73,90 @@ body {
 a {
   color: rgb(var(--text));
 }
+
+/* ==========================================================================
+   LangGraph Node State Animations
+   ========================================================================== */
+
+/* Running node - pulsing blue glow */
+@keyframes node-pulse-running {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4), inset 0 0 0 0 rgba(56, 189, 248, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(56, 189, 248, 0.5), inset 0 0 12px 0 rgba(56, 189, 248, 0.15);
+  }
+}
+
+/* Completed node - brief success flash */
+@keyframes node-flash-completed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  }
+  30% {
+    box-shadow: 0 0 20px 6px rgba(34, 197, 94, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.25);
+  }
+}
+
+/* Failed node - pulsing red alert */
+@keyframes node-pulse-failed {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px rgba(239, 68, 68, 0.55);
+  }
+}
+
+/* Canceled node - amber fade */
+@keyframes node-pulse-canceled {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(245, 158, 11, 0.4);
+  }
+}
+
+/* Animation utility classes for ReactFlow nodes */
+.node-animate-running {
+  animation: node-pulse-running 1.8s ease-in-out infinite;
+}
+
+.node-animate-completed {
+  animation: node-flash-completed 0.8s ease-out forwards;
+}
+
+.node-animate-failed {
+  animation: node-pulse-failed 1.2s ease-in-out infinite;
+}
+
+.node-animate-canceled {
+  animation: node-pulse-canceled 2s ease-in-out infinite;
+}
+
+.node-animate-pending {
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+}
+
+/* Smooth transitions for all node state changes */
+.react-flow__node {
+  transition: transform 0.2s ease, box-shadow 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
+}
+
+/* Timeline event type indicators */
+.event-type-node_started { border-left: 3px solid #38bdf8; }
+.event-type-node_completed { border-left: 3px solid #22c55e; }
+.event-type-node_failed { border-left: 3px solid #ef4444; }
+.event-type-run_started { border-left: 3px solid #8b5cf6; }
+.event-type-run_finished { border-left: 3px solid #22c55e; }
+.event-type-run_failed { border-left: 3px solid #ef4444; }
+.event-type-run_canceled { border-left: 3px solid #f59e0b; }
+.event-type-plan_proposed { border-left: 3px solid #06b6d4; }
+.event-type-waiting_decision { border-left: 3px solid #f59e0b; }
+.event-type-decision_submitted { border-left: 3px solid #a855f7; }
+.event-type-resumed { border-left: 3px solid #8b5cf6; }

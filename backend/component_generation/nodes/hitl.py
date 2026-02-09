@@ -63,7 +63,8 @@ def node_hitl(state: PipelineState) -> Dict[str, Any]:
     hitl_mode = str(state.get("hitl_mode") or "cli").strip().lower()
 
     if hitl_mode == "api":
-        _emit_event(state, "plan_proposed", {"plan": plan})
+        pretty_plan = _pretty_plan(plan)
+        _emit_event(state, "plan_proposed", {"plan": plan, "prettyPlan": pretty_plan})
         if state.get("auto_approve"):
             logger.info("hitl: auto-approving plan (api mode)")
             _emit_event(state, "resumed", {"approved": True})
@@ -73,7 +74,11 @@ def node_hitl(state: PipelineState) -> Dict[str, Any]:
         if not callable(decision_getter):
             raise RuntimeError("HITL API mode requires a callable hitl_decision_getter")
 
-        _emit_event(state, "waiting_decision", {"plan": plan})
+        _emit_event(
+            state,
+            "waiting_decision",
+            {"plan": plan, "prettyPlan": pretty_plan},
+        )
         decision = decision_getter(plan)
         approved = bool(decision.get("approved"))
         feedback = (decision.get("feedback") or "").strip()

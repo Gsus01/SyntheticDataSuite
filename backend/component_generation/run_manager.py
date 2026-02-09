@@ -5,11 +5,13 @@ import logging
 import multiprocessing as mp
 import os
 import queue
+import sys
 import threading
+import traceback
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable
 from uuid import uuid4
 
 from component_generation.context import (
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_RUN_STATUSES = {"queued", "running", "waiting_decision"}
 TERMINAL_RUN_STATUSES = {"succeeded", "failed", "canceled"}
+MAX_LOG_LINES_IN_MEMORY = 5000
+LOG_TAIL_LINES = 300
 
 KNOWN_GRAPH_NODES = [
     "load",
@@ -106,8 +110,10 @@ class RunRecord:
     review_status: str | None = None
     integration_report: str | None = None
     error: str | None = None
+    pending_pretty_plan: str | None = None
     cancel_requested: bool = False
     events: list[RunEvent] = field(default_factory=list)
+    log_lines: list[str] = field(default_factory=list)
     next_seq: int = 1
     process: mp.Process | None = None
     event_queue: Any | None = None
@@ -131,6 +137,52 @@ class RunInvalidStateError(RunManagerError):
     """Raised when an action is not valid for the run state."""
 
 
+class _EventStreamWriter:
+    def __init__(
+        self,
+        emit_line: Callable[[str, str, str], None],
+        *,
+        level: str,
+        source: str,
+    ) -> None:
+        self._emit_line = emit_line
+        self._level = level
+        self._source = source
+        self._buffer = ""
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+        self._buffer += data
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self._emit_line(line.rstrip("\r"), self._level, self._source)
+        return len(data)
+
+    def flush(self) -> None:
+        if self._buffer:
+            self._emit_line(self._buffer.rstrip("\r"), self._level, self._source)
+            self._buffer = ""
+
+    def isatty(self) -> bool:  # pragma: no cover - compatibility
+        return False
+
+
+class _QueueLogHandler(logging.Handler):
+    def __init__(self, emit_line: Callable[[str, str, str], None]) -> None:
+        super().__init__()
+        self._emit_line = emit_line
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            rendered = self.format(record)
+        except Exception:  # pragma: no cover - defensive
+            rendered = record.getMessage()
+        lines = rendered.splitlines() or [rendered]
+        for line in lines:
+            self._emit_line(line, record.levelname.upper(), record.name)
+
+
 def _worker_main(
     *,
     run_id: str,
@@ -147,6 +199,13 @@ def _worker_main(
                 "type": event_type,
                 "payload": payload or {},
             }
+        )
+
+    def emit_log_line(line: str, level: str = "INFO", source: str = "worker") -> None:
+        text = str(line).rstrip("\r")
+        emit(
+            "log_line",
+            {"line": text, "level": level.upper(), "source": source},
         )
 
     def wait_for_decision(plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -166,6 +225,36 @@ def _worker_main(
             return {"approved": approved, "feedback": feedback}
 
     emit("run_started", {"runId": run_id})
+    emit_log_line(f"run {run_id} started", "INFO", "run_manager")
+
+    root_logger = logging.getLogger()
+    previous_handlers = list(root_logger.handlers)
+    previous_level = root_logger.level
+    queue_handler = _QueueLogHandler(emit_log_line)
+    queue_handler.setLevel(logging.DEBUG)
+    queue_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
+    root_logger.handlers = [queue_handler]
+    root_logger.setLevel(logging.INFO)
+
+    stdout_writer = _EventStreamWriter(
+        emit_log_line,
+        level="STDOUT",
+        source="stdout",
+    )
+    stderr_writer = _EventStreamWriter(
+        emit_log_line,
+        level="STDERR",
+        source="stderr",
+    )
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = stdout_writer  # type: ignore[assignment]
+    sys.stderr = stderr_writer  # type: ignore[assignment]
 
     try:
         llm = None
@@ -225,6 +314,8 @@ def _worker_main(
 
         graph = build_graph(emit_event=emit)
         final_state = graph.invoke(state)
+        stdout_writer.flush()
+        stderr_writer.flush()
         emit(
             "run_finished",
             {
@@ -236,9 +327,22 @@ def _worker_main(
             },
         )
     except Exception as exc:
+        traceback_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        for line in traceback_text.splitlines():
+            emit_log_line(line, "ERROR", "traceback")
         emit("run_failed", {"error": str(exc)})
         logger.exception("component generation run %s failed", run_id)
         raise
+    finally:
+        try:
+            stdout_writer.flush()
+            stderr_writer.flush()
+        except Exception:  # pragma: no cover - defensive
+            pass
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        root_logger.handlers = previous_handlers
+        root_logger.setLevel(previous_level)
 
 
 class ComponentGenerationRunManager:
@@ -514,16 +618,29 @@ class ComponentGenerationRunManager:
             if event_type == "run_started":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "running"
+            elif event_type == "log_line":
+                line = payload.get("line")
+                if isinstance(line, str):
+                    level = str(payload.get("level") or "INFO").upper()
+                    source = str(payload.get("source") or "worker")
+                    rendered_line = f"[{level}] {source}: {line}" if line else ""
+                    self._append_log_line_locked(record, rendered_line)
             elif event_type == "plan_proposed":
                 plan = payload.get("plan")
                 if isinstance(plan, dict):
                     record.pending_plan = plan
+                pretty_plan = payload.get("prettyPlan")
+                if isinstance(pretty_plan, str):
+                    record.pending_pretty_plan = pretty_plan
             elif event_type == "waiting_decision":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "waiting_decision"
                 plan = payload.get("plan")
                 if isinstance(plan, dict):
                     record.pending_plan = plan
+                pretty_plan = payload.get("prettyPlan")
+                if isinstance(pretty_plan, str):
+                    record.pending_pretty_plan = pretty_plan
             elif event_type == "resumed":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "running"
@@ -664,6 +781,18 @@ class ComponentGenerationRunManager:
         with events_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event.to_dict(), ensure_ascii=False) + "\n")
 
+    def _append_log_line_locked(self, record: RunRecord, line: str) -> None:
+        if line is None:
+            return
+        record.log_lines.append(line)
+        if len(record.log_lines) > MAX_LOG_LINES_IN_MEMORY:
+            record.log_lines = record.log_lines[-MAX_LOG_LINES_IN_MEMORY:]
+
+        logs_path = Path(record.session_dir) / "logs.txt"
+        logs_path.parent.mkdir(parents=True, exist_ok=True)
+        with logs_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
     def _snapshot_locked(self, record: RunRecord) -> Dict[str, Any]:
         return {
             "runId": record.run_id,
@@ -675,10 +804,12 @@ class ComponentGenerationRunManager:
             "options": record.options,
             "nodeStates": record.node_states,
             "pendingPlan": record.pending_plan,
+            "pendingPrettyPlan": record.pending_pretty_plan,
             "generatedIndex": record.generated_index,
             "reviewReport": record.review_report,
             "reviewStatus": record.review_status,
             "integrationReport": record.integration_report,
+            "logTail": record.log_lines[-LOG_TAIL_LINES:],
             "error": record.error,
             "canCancel": record.status in ACTIVE_RUN_STATUSES,
             "awaitingDecision": record.status == "waiting_decision",
