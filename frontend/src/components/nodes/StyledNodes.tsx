@@ -6,15 +6,13 @@ import {
   Handle,
   Position,
   type Edge,
-  type Node,
   type NodeProps,
-  useEdges,
-  useNodes,
-} from "reactflow";
+  useReactFlow,
+} from "@xyflow/react";
 import NodeCard, { type NodeTone } from "@/components/NodeCard";
 import { buildApiUrl } from "@/lib/api";
 import { getOutputArtifacts } from "@/lib/workflow";
-import type { FlowNodeData, FlowNodePorts, NodeArtifactPort } from "@/types/flow";
+import type { FlowNode, FlowNodeData, FlowNodePorts, NodeArtifactPort } from "@/types/flow";
 
 type Variant = "input" | "default" | "output";
 
@@ -35,9 +33,45 @@ type OutputPreviewState =
   | ErrorPreviewState
   | ReadyPreviewState;
 
-type OutputNodeProps = NodeProps<FlowNodeData> & {
+type FlowNodeRuntimeContextValue = {
   sessionId: string;
+  previewRefreshVersion: number;
 };
+
+type OutputNodeProps = NodeProps<FlowNode>;
+
+const DEFAULT_FLOW_NODE_RUNTIME_CONTEXT: FlowNodeRuntimeContextValue = {
+  sessionId: "",
+  previewRefreshVersion: 0,
+};
+
+const FlowNodeRuntimeContext = React.createContext<FlowNodeRuntimeContextValue>(
+  DEFAULT_FLOW_NODE_RUNTIME_CONTEXT
+);
+
+export function FlowNodeRuntimeProvider({
+  sessionId,
+  previewRefreshVersion,
+  children,
+}: React.PropsWithChildren<FlowNodeRuntimeContextValue>) {
+  const value = React.useMemo(
+    () => ({
+      sessionId,
+      previewRefreshVersion,
+    }),
+    [previewRefreshVersion, sessionId]
+  );
+
+  return (
+    <FlowNodeRuntimeContext.Provider value={value}>
+      {children}
+    </FlowNodeRuntimeContext.Provider>
+  );
+}
+
+function useFlowNodeRuntime() {
+  return React.useContext(FlowNodeRuntimeContext);
+}
 
 const HIDDEN_PREVIEW_STATE: HiddenPreviewState = { kind: "hidden" };
 const outputPreviewCache = new Map<string, OutputPreviewState>();
@@ -131,50 +165,6 @@ function isImageArtifact(contentType?: string | null, key?: string | null): bool
   return normalizedType === "" || normalizedType === "application/octet-stream";
 }
 
-function serializeNodesSignature(nodes: Node<FlowNodeData>[]): string {
-  const compact = nodes
-    .map((node) => {
-      const { runtimeStatus, artifactPorts, ...rest } = node.data;
-      void runtimeStatus;
-      void artifactPorts;
-      return {
-        id: node.id,
-        type: node.type,
-        data: rest,
-      };
-    })
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  return JSON.stringify(compact);
-}
-
-function serializeEdgesSignature(edges: Edge[]): string {
-  const compact = edges
-    .map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      sourceHandle: edge.sourceHandle ?? null,
-      targetHandle: edge.targetHandle ?? null,
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  return JSON.stringify(compact);
-}
-
-function serializeExecutionSignature(nodes: Node<FlowNodeData>[]): string {
-  const compact = nodes
-    .map((node) => ({
-      id: node.id,
-      phase: node.data.runtimeStatus?.phase ?? null,
-      startedAt: node.data.runtimeStatus?.startedAt ?? null,
-      finishedAt: node.data.runtimeStatus?.finishedAt ?? null,
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  return JSON.stringify(compact);
-}
-
 function writePreviewCache(nodeId: string, nextState: OutputPreviewState) {
   const previous = outputPreviewCache.get(nodeId);
   if (
@@ -206,15 +196,14 @@ function useOutputImagePreview({
   nodeId,
   sessionId,
   templateName,
+  previewRefreshVersion,
 }: {
   nodeId: string;
   sessionId: string;
   templateName?: string;
+  previewRefreshVersion: number;
 }) {
-  const nodes = useNodes<FlowNodeData>();
-  const edges = useEdges();
-  const nodesRef = React.useRef<Node<FlowNodeData>[]>(nodes);
-  const edgesRef = React.useRef<Edge[]>(edges);
+  const reactFlow = useReactFlow<FlowNode, Edge>();
   const stateRef = React.useRef<OutputPreviewState>(outputPreviewCache.get(nodeId) ?? HIDDEN_PREVIEW_STATE);
   const requestIdRef = React.useRef(0);
   const [previewState, setPreviewState] = React.useState<OutputPreviewState>(
@@ -222,22 +211,10 @@ function useOutputImagePreview({
   );
 
   React.useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
-
-  React.useEffect(() => {
-    edgesRef.current = edges;
-  }, [edges]);
-
-  React.useEffect(() => {
     const cached = outputPreviewCache.get(nodeId) ?? HIDDEN_PREVIEW_STATE;
     stateRef.current = cached;
     setPreviewState(cached);
   }, [nodeId]);
-
-  React.useEffect(() => {
-    prunePreviewCache(new Set(nodes.map((node) => node.id)));
-  }, [nodes]);
 
   React.useEffect(() => {
     return () => {
@@ -252,15 +229,6 @@ function useOutputImagePreview({
       setPreviewState(nextState);
     },
     [nodeId]
-  );
-
-  const graphSignature = React.useMemo(
-    () => `${serializeNodesSignature(nodes)}|${serializeEdgesSignature(edges)}`,
-    [edges, nodes]
-  );
-  const executionSignature = React.useMemo(
-    () => serializeExecutionSignature(nodes),
-    [nodes]
   );
 
   React.useEffect(() => {
@@ -280,7 +248,11 @@ function useOutputImagePreview({
     };
 
     const run = async () => {
-      const incomingEdges = edgesRef.current.filter((edge) => edge.target === nodeId);
+      const currentNodes = reactFlow.getNodes();
+      const currentEdges = reactFlow.getEdges();
+      prunePreviewCache(new Set(currentNodes.map((node) => node.id)));
+
+      const incomingEdges = currentEdges.filter((edge) => edge.target === nodeId);
       if (!incomingEdges.length || !sessionId || !templateName) {
         setAndCacheState(HIDDEN_PREVIEW_STATE);
         return;
@@ -290,8 +262,8 @@ function useOutputImagePreview({
         const artifacts = await getOutputArtifacts(
           {
             sessionId,
-            nodes: nodesRef.current,
-            edges: edgesRef.current,
+            nodes: currentNodes,
+            edges: currentEdges,
           },
           nodeId
         );
@@ -399,12 +371,19 @@ function useOutputImagePreview({
         retryTimeout = null;
       }
     };
-  }, [executionSignature, graphSignature, nodeId, sessionId, setAndCacheState, templateName]);
+  }, [
+    nodeId,
+    previewRefreshVersion,
+    reactFlow,
+    sessionId,
+    setAndCacheState,
+    templateName,
+  ]);
 
   return previewState;
 }
 
-function BaseNode({ data, selected, variant }: NodeProps<FlowNodeData> & { variant: Variant }) {
+function BaseNode({ data, selected, variant }: NodeProps<FlowNode> & { variant: Variant }) {
   const label = data.label || "Node";
   const resolvedPorts = resolvePorts(data, variant);
 
@@ -471,7 +450,8 @@ function OutputPreviewPanel({
   );
 }
 
-export function OutputNode({ data, selected, id, sessionId }: OutputNodeProps) {
+function OutputNodeComponent({ data, selected, id }: OutputNodeProps) {
+  const { previewRefreshVersion, sessionId } = useFlowNodeRuntime();
   const label = data.label || "Output Node";
   const resolvedPorts = resolvePorts(data, "output");
   const [isImageModalOpen, setIsImageModalOpen] = React.useState(false);
@@ -479,6 +459,7 @@ export function OutputNode({ data, selected, id, sessionId }: OutputNodeProps) {
     nodeId: id,
     sessionId,
     templateName: data.templateName,
+    previewRefreshVersion,
   });
   const showPreviewPanel = previewState.kind !== "hidden";
 
@@ -568,9 +549,18 @@ export function OutputNode({ data, selected, id, sessionId }: OutputNodeProps) {
   );
 }
 
-export const InputNode = (props: NodeProps<FlowNodeData>) => (
-  <BaseNode {...props} variant="input" />
-);
-export const DefaultNode = (props: NodeProps<FlowNodeData>) => (
-  <BaseNode {...props} variant="default" />
-);
+function InputNodeComponent(props: NodeProps<FlowNode>) {
+  return <BaseNode {...props} variant="input" />;
+}
+
+function DefaultNodeComponent(props: NodeProps<FlowNode>) {
+  return <BaseNode {...props} variant="default" />;
+}
+
+OutputNodeComponent.displayName = "OutputNode";
+InputNodeComponent.displayName = "InputNode";
+DefaultNodeComponent.displayName = "DefaultNode";
+
+export const OutputNode = React.memo(OutputNodeComponent);
+export const InputNode = React.memo(InputNodeComponent);
+export const DefaultNode = React.memo(DefaultNodeComponent);

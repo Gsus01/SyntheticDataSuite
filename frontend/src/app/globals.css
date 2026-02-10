@@ -142,21 +142,3 @@ a {
   opacity: 0.6;
   transition: opacity 0.3s ease;
 }
-
-/* Smooth transitions for all node state changes */
-.react-flow__node {
-  transition: transform 0.2s ease, box-shadow 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
-}
-
-/* Timeline event type indicators */
-.event-type-node_started { border-left: 3px solid #38bdf8; }
-.event-type-node_completed { border-left: 3px solid #22c55e; }
-.event-type-node_failed { border-left: 3px solid #ef4444; }
-.event-type-run_started { border-left: 3px solid #8b5cf6; }
-.event-type-run_finished { border-left: 3px solid #22c55e; }
-.event-type-run_failed { border-left: 3px solid #ef4444; }
-.event-type-run_canceled { border-left: 3px solid #f59e0b; }
-.event-type-plan_proposed { border-left: 3px solid #06b6d4; }
-.event-type-waiting_decision { border-left: 3px solid #f59e0b; }
-.event-type-decision_submitted { border-left: 3px solid #a855f7; }
-.event-type-resumed { border-left: 3px solid #8b5cf6; }

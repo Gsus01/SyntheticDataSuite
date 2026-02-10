@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import type { Node } from "reactflow";
+import { useReactFlow } from "@xyflow/react";
 
 import {
   fetchWorkflowLogs,
   type SubmitWorkflowResult,
 } from "@/lib/workflow";
-import type { FlowNodeData } from "@/types/flow";
+import type { FlowNode } from "@/types/flow";
 
 type WorkflowTerminalProps = {
   isOpen: boolean;
@@ -15,7 +15,7 @@ type WorkflowTerminalProps = {
   workflowName?: string | null;
   namespace?: string | null;
   nodeSlugMap?: Record<string, string> | null;
-  nodes: Node<FlowNodeData>[];
+  graphRefreshVersion: number;
   submitting: boolean;
   submitResult: SubmitWorkflowResult | null;
   submitError: string | null;
@@ -82,7 +82,7 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function resolveDisplayLabel(slug?: string | null, node?: Node<FlowNodeData>): string {
+function resolveDisplayLabel(slug?: string | null, node?: FlowNode): string {
   const explicitLabel = node?.data.label?.trim();
   if (explicitLabel) {
     return explicitLabel;
@@ -103,10 +103,10 @@ function resolveDisplayLabel(slug?: string | null, node?: Node<FlowNodeData>): s
 
 function buildNodeLabelHints(
   nodeSlugMap?: Record<string, string> | null,
-  nodes?: Node<FlowNodeData>[]
+  nodes?: FlowNode[]
 ): Map<string, string> {
   const hints = new Map<string, string>();
-  const nodeById = new Map<string, Node<FlowNodeData>>();
+  const nodeById = new Map<string, FlowNode>();
   (nodes || []).forEach((node) => {
     nodeById.set(node.id, node);
   });
@@ -505,12 +505,14 @@ export default function WorkflowTerminal({
   workflowName,
   namespace,
   nodeSlugMap,
-  nodes,
+  graphRefreshVersion,
   submitting,
   submitResult,
   submitError,
 }: WorkflowTerminalProps) {
+  const reactFlow = useReactFlow<FlowNode>();
   const resolvedNamespace = namespace ?? submitResult?.namespace ?? undefined;
+  const [flowNodes, setFlowNodes] = React.useState<FlowNode[]>([]);
   const [height, setHeight] = React.useState<number>(320);
   const [isResizing, setIsResizing] = React.useState(false);
   const [fetchError, setFetchError] = React.useState<string | null>(null);
@@ -527,8 +529,14 @@ export default function WorkflowTerminal({
   const startHeightRef = React.useRef(0);
   const stableTimestampsRef = React.useRef<Map<string, string>>(new Map());
 
+  React.useEffect(() => {
+    setFlowNodes(reactFlow.getNodes());
+  }, [graphRefreshVersion, reactFlow]);
 
-  const labelHints = React.useMemo(() => buildNodeLabelHints(nodeSlugMap, nodes), [nodeSlugMap, nodes]);
+  const labelHints = React.useMemo(
+    () => buildNodeLabelHints(nodeSlugMap, flowNodes),
+    [flowNodes, nodeSlugMap]
+  );
   const logEntries = React.useMemo(() => buildLogEntries(logText, labelHints, stableTimestampsRef.current), [labelHints, logText]);
   const lineCount = logEntries.length;
 

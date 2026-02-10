@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import React from "react";
-import ReactFlow, {
+import {
+  ReactFlow,
   Background,
   Controls,
   Edge,
@@ -10,10 +11,11 @@ import ReactFlow, {
   MarkerType,
   MiniMap,
   type Node,
+  type NodeTypes,
   type NodeProps,
   Position,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import {
   cancelComponentGenerationRun,
@@ -52,6 +54,8 @@ type WorkflowGraphNodeData = {
   state: WorkflowNodeState;
   message?: string | null;
 };
+
+type WorkflowGraphNodeType = Node<WorkflowGraphNodeData, "workflowNode">;
 
 type LogEntry = {
   id: string;
@@ -469,7 +473,7 @@ function stateLabel(state: WorkflowNodeState): string {
   return state;
 }
 
-function WorkflowGraphNode({ data }: NodeProps<WorkflowGraphNodeData>) {
+function WorkflowGraphNode({ data }: NodeProps<WorkflowGraphNodeType>) {
   const theme = nodeTheme(data.state);
   return (
     <div
@@ -502,7 +506,7 @@ function WorkflowGraphNode({ data }: NodeProps<WorkflowGraphNodeData>) {
   );
 }
 
-const graphNodeTypes = {
+const graphNodeTypes: NodeTypes = {
   workflowNode: WorkflowGraphNode,
 };
 
@@ -790,7 +794,7 @@ export default function ComponentGenerationPage() {
     container.scrollTop = container.scrollHeight;
   }, [autoScrollLogs, logEntries]);
 
-  const graphNodes = React.useMemo<Node<WorkflowGraphNodeData>[]>(
+  const graphNodes = React.useMemo<WorkflowGraphNodeType[]>(
     () =>
       GRAPH_LAYOUT.map((item) => {
         const state = workflowNodeStateFor(run, item.id);

@@ -1,19 +1,18 @@
 "use client";
 
 import React from "react";
-import type { Edge, Node } from "reactflow";
+import { useReactFlow, type Edge } from "@xyflow/react";
 import { API_BASE, buildApiUrl } from "@/lib/api";
 import { NODE_TYPES } from "@/lib/flow-const";
-import type { FlowNodeData, NodeArtifact } from "@/types/flow";
+import type { FlowNode, FlowNodeData, NodeArtifact } from "@/types/flow";
 import { getOutputArtifacts, previewArtifact, type OutputArtifactInfo } from "@/lib/workflow";
 import { derivePhase } from "@/lib/runtime-status";
 
 type NodeInspectorProps = {
   isOpen: boolean;
-  node: Node<FlowNodeData> | null;
+  node: FlowNode | null;
   sessionId: string;
-  nodes: Node<FlowNodeData>[];
-  edges: Edge[];
+  graphRefreshVersion: number;
   onChange: (nodeId: string, updater: (data: FlowNodeData) => FlowNodeData) => void;
 };
 
@@ -237,10 +236,10 @@ export default function NodeInspector({
   isOpen,
   node,
   sessionId,
-  nodes,
-  edges,
+  graphRefreshVersion,
   onChange,
 }: NodeInspectorProps) {
+  const reactFlow = useReactFlow<FlowNode, Edge>();
   const [structuredInputs, setStructuredInputs] = React.useState<Record<string, string>>({});
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -347,11 +346,13 @@ export default function NodeInspector({
       setIsOutputArtifactsLoading(true);
       setOutputError(null);
       try {
+        const currentNodes = reactFlow.getNodes();
+        const currentEdges = reactFlow.getEdges();
         const artifacts = await getOutputArtifacts(
           {
             sessionId,
-            nodes,
-            edges,
+            nodes: currentNodes,
+            edges: currentEdges,
           },
           nodeId
         );
@@ -379,7 +380,16 @@ export default function NodeInspector({
     return () => {
       cancelled = true;
     };
-  }, [clearPreviewStates, edges, isOpen, node, node?.id, node?.type, nodes, sessionId]);
+  }, [
+    clearPreviewStates,
+    graphRefreshVersion,
+    isOpen,
+    node,
+    node?.id,
+    node?.type,
+    reactFlow,
+    sessionId,
+  ]);
 
   const clearParameter = React.useCallback(
     (key: string) => {
@@ -1078,7 +1088,7 @@ export default function NodeInspector({
                           type="button"
                           onClick={() =>
                             setImageModalState({
-                              imageUrl: previewState.imageUrl,
+                              imageUrl: previewState.imageUrl!,
                               artifactLabel: previewState.artifactLabel,
                               contentType: previewState.contentType ?? null,
                             })
