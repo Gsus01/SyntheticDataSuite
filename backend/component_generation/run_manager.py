@@ -509,22 +509,21 @@ class ComponentGenerationRunManager:
             if record.status in TERMINAL_RUN_STATUSES:
                 return self._snapshot_locked(record)
 
-            record.cancel_requested = True
-            record.status = "canceled"
-            record.error = record.error or "Run canceled by user."
-            self._append_event_locked(
-                record,
-                "run_canceled",
-                {"reason": "user_requested"},
-            )
-            if record.process and record.process.is_alive():
-                try:
-                    record.process.terminate()
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Failed to terminate run %s: %s", run_id, exc)
-            self._clear_active_run_locked(run_id)
-            self._persist_run_meta_locked(record)
+            self._cancel_record_locked(record, reason="user_requested")
             return self._snapshot_locked(record)
+
+    def cancel_all_active_runs(self) -> Dict[str, Any]:
+        with self._lock:
+            canceled_run_ids: list[str] = []
+            for record in self._runs.values():
+                if record.status not in ACTIVE_RUN_STATUSES:
+                    continue
+                self._cancel_record_locked(record, reason="user_requested_batch")
+                canceled_run_ids.append(record.run_id)
+            return {
+                "canceledRunIds": canceled_run_ids,
+                "canceledCount": len(canceled_run_ids),
+            }
 
     def _monitor_run(self, run_id: str) -> None:
         while True:
@@ -756,6 +755,24 @@ class ComponentGenerationRunManager:
     def _clear_active_run_locked(self, run_id: str) -> None:
         if self._active_run_id == run_id:
             self._active_run_id = None
+
+    def _cancel_record_locked(self, record: RunRecord, *, reason: str) -> None:
+        run_id = record.run_id
+        record.cancel_requested = True
+        record.status = "canceled"
+        record.error = record.error or "Run canceled by user."
+        self._append_event_locked(
+            record,
+            "run_canceled",
+            {"reason": reason},
+        )
+        if record.process and record.process.is_alive():
+            try:
+                record.process.terminate()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to terminate run %s: %s", run_id, exc)
+        self._clear_active_run_locked(run_id)
+        self._persist_run_meta_locked(record)
 
     def _append_event_locked(
         self,

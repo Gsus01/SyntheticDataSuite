@@ -108,3 +108,27 @@ def test_run_manager_requires_hitl_decision(tmp_path: Path) -> None:
         lambda item: item["status"] in {"succeeded", "failed", "canceled"},
     )
     assert final["status"] == "succeeded"
+
+
+def test_cancel_all_active_runs_cancels_waiting_run(tmp_path: Path) -> None:
+    manager = ComponentGenerationRunManager(output_root=tmp_path)
+    snapshot = manager.start_run(
+        input_files=[
+            RunInputFile(filename="sample.py", content=b"print('hello')\n"),
+        ],
+        options=_base_options(auto_approve=False),
+    )
+    run_id = snapshot["runId"]
+
+    _wait_until(manager, run_id, lambda item: item["status"] == "waiting_decision")
+
+    result = manager.cancel_all_active_runs()
+    assert result["canceledCount"] == 1
+    assert run_id in result["canceledRunIds"]
+
+    final = _wait_until(
+        manager,
+        run_id,
+        lambda item: item["status"] in {"succeeded", "failed", "canceled"},
+    )
+    assert final["status"] == "canceled"

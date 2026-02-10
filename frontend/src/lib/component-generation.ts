@@ -45,6 +45,11 @@ export type ComponentGenerationRunSnapshot = {
   lastSeq: number;
 };
 
+export type CancelAllComponentGenerationRunsResult = {
+  canceledRunIds: string[];
+  canceledCount: number;
+};
+
 export type ComponentGenerationRunEvent = {
   seq: number;
   timestamp: string;
@@ -180,6 +185,16 @@ export async function cancelComponentGenerationRun(
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ComponentGenerationRunSnapshot;
+}
+
+export async function cancelAllComponentGenerationRuns(): Promise<CancelAllComponentGenerationRunsResult> {
+  const response = await fetch(`${API_BASE}/component-generation/runs/cancel-all`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as CancelAllComponentGenerationRunsResult;
 }
 
 const EVENT_TYPES = [

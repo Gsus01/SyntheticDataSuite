@@ -91,12 +91,21 @@ def _heuristic_plan(state: PipelineState) -> Dict[str, Any]:
     input_paths = state.get("input_paths") or []
     ctype = _infer_type(source, input_paths)
     name = _default_component_name(input_paths)
+    secondary_type: ComponentType = (
+        "training"
+        if ctype == "preprocessing"
+        else "generation"
+        if ctype == "training"
+        else "other"
+        if ctype == "generation"
+        else "preprocessing"
+    )
 
-    component = {
+    primary_component = {
         "name": name,
         "title": name.replace("-", " ").title(),
         "type": ctype,
-        "description": "Auto-generated plan (heuristic).",
+        "description": "Auto-generated primary component (heuristic step 1).",
         "inputs": [
             {
                 "name": "input-data",
@@ -106,8 +115,8 @@ def _heuristic_plan(state: PipelineState) -> Dict[str, Any]:
         ],
         "outputs": [
             {
-                "name": "output-data",
-                "path": "/data/outputs/output",
+                "name": "prepared-data",
+                "path": "/data/outputs/prepared",
                 "role": "data",
             }
         ],
@@ -115,10 +124,39 @@ def _heuristic_plan(state: PipelineState) -> Dict[str, Any]:
         "notes": ["Generated without LLM. Adjust IO/params in HITL."],
     }
 
+    secondary_name = _sanitize_kebab(f"{name}-aux")
+    secondary_component = {
+        "name": secondary_name,
+        "title": secondary_name.replace("-", " ").title(),
+        "type": secondary_type,
+        "description": "Auto-generated complementary component (heuristic step 2).",
+        "inputs": [
+            {
+                "name": "prepared-data",
+                "path": "/data/inputs/prepared",
+                "role": "data",
+            },
+            {
+                "name": "settings",
+                "path": "/data/config/settings.json",
+                "role": "config",
+            },
+        ],
+        "outputs": [
+            {
+                "name": "result-data",
+                "path": "/data/outputs/result",
+                "role": "data",
+            }
+        ],
+        "parameters_defaults": {"emit_summary": True},
+        "notes": ["Fallback component added to make the review plan more explicit."],
+    }
+
     return {
-        "components": [component],
+        "components": [primary_component, secondary_component],
         "rationale": "Heuristic plan derived from input filenames and content.",
-        "assumptions": ["LLM not configured; using minimal defaults."],
+        "assumptions": ["LLM not configured; using minimal defaults with a two-step fallback plan."],
     }
 
 

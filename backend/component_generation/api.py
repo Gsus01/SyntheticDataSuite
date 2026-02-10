@@ -79,6 +79,13 @@ class DecisionPayload(BaseModel):
     feedback: str | None = None
 
 
+class CancelAllRunsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    canceled_run_ids: List[str] = Field(default_factory=list, alias="canceledRunIds")
+    canceled_count: int = Field(default=0, alias="canceledCount")
+
+
 def _safe_filename(name: str | None, *, fallback: str) -> str:
     if not name:
         return fallback
@@ -283,3 +290,9 @@ def cancel_run(run_id: str) -> RunResponse:
     except RunNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _to_run_response(snapshot)
+
+
+@router.post("/runs/cancel-all", response_model=CancelAllRunsResponse)
+def cancel_all_runs() -> CancelAllRunsResponse:
+    result = RUN_MANAGER.cancel_all_active_runs()
+    return CancelAllRunsResponse.model_validate(result)
