@@ -33,6 +33,7 @@ import {
   saveWorkflow,
   listWorkflows,
   getWorkflow,
+  deleteWorkflow,
   type SubmitWorkflowResult,
   type WorkflowStatusNodeMap,
   type WorkflowRecord,
@@ -184,9 +185,16 @@ function EditorInner() {
   const [summariesLoading, setSummariesLoading] = React.useState(false);
   const [summariesError, setSummariesError] = React.useState<string | null>(null);
   const [loadingWorkflowId, setLoadingWorkflowId] = React.useState<string | null>(null);
+  const [deletingWorkflowId, setDeletingWorkflowId] = React.useState<string | null>(null);
+  const [workflowPendingDelete, setWorkflowPendingDelete] = React.useState<WorkflowSummary | null>(null);
   const [templateIndex, setTemplateIndex] = React.useState<Record<string, CatalogNodeTemplate>>({});
   const statusPollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusAbortRef = React.useRef(false);
+  const removedTemplatesSnapshotRef = React.useRef<{
+    templateNames: string[];
+    nodes: Node<FlowNodeData>[];
+    edges: Edge[];
+  } | null>(null);
   const isReadyToSend = Boolean(compiledState && !isCompileDirty);
   const showUnsyncedHint = Boolean(compiledState && isCompileDirty);
   const { isDark, toggleTheme } = useTheme();
@@ -331,6 +339,111 @@ function EditorInner() {
       return changed ? next : prev;
     });
   }, [setNodes, templateIndex]);
+
+  const handleTemplatesDeleted = useCallback(
+    (templateNames: string[]) => {
+      const normalizedNames = [...new Set(templateNames)].sort();
+      if (!normalizedNames.length) {
+        return;
+      }
+
+      const nameSet = new Set(normalizedNames);
+      const removedNodes = nodes
+        .filter((node) => node.data.templateName && nameSet.has(node.data.templateName))
+        .map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+          },
+        }));
+      const removedNodeIds = new Set(removedNodes.map((node) => node.id));
+      const removedEdges = edges
+        .filter(
+          (edge) =>
+            removedNodeIds.has(edge.source) || removedNodeIds.has(edge.target)
+        )
+        .map((edge) => ({ ...edge }));
+
+      removedTemplatesSnapshotRef.current = {
+        templateNames: normalizedNames,
+        nodes: removedNodes,
+        edges: removedEdges,
+      };
+
+      if (removedNodeIds.size > 0) {
+        setNodes((prev) => prev.filter((node) => !removedNodeIds.has(node.id)));
+        setEdges((prev) =>
+          prev.filter(
+            (edge) =>
+              !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target)
+          )
+        );
+        if (selectedNodeId && removedNodeIds.has(selectedNodeId)) {
+          setSelectedNodeId(null);
+        }
+        markDirty("all");
+      }
+
+      setTemplateIndex((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const templateName of normalizedNames) {
+          if (templateName in next) {
+            delete next[templateName];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [edges, markDirty, nodes, selectedNodeId, setEdges, setNodes]
+  );
+
+  const handleTemplatesRestored = useCallback(
+    (templateNames: string[]) => {
+      const normalizedNames = [...new Set(templateNames)].sort();
+      if (!normalizedNames.length) {
+        return;
+      }
+
+      const snapshot = removedTemplatesSnapshotRef.current;
+      if (
+        snapshot &&
+        snapshot.templateNames.length === normalizedNames.length &&
+        snapshot.templateNames.every((name, index) => name === normalizedNames[index])
+      ) {
+        if (snapshot.nodes.length > 0 || snapshot.edges.length > 0) {
+          setNodes((prev) => {
+            const existingNodeIds = new Set(prev.map((node) => node.id));
+            const toRestore = snapshot.nodes.filter(
+              (node) => !existingNodeIds.has(node.id)
+            );
+            return toRestore.length > 0 ? [...prev, ...toRestore] : prev;
+          });
+          setEdges((prev) => {
+            const existingEdgeIds = new Set(prev.map((edge) => edge.id));
+            const toRestore = snapshot.edges.filter(
+              (edge) => !existingEdgeIds.has(edge.id)
+            );
+            return toRestore.length > 0 ? [...prev, ...toRestore] : prev;
+          });
+          markDirty("all");
+        }
+      }
+
+      removedTemplatesSnapshotRef.current = null;
+
+      void (async () => {
+        try {
+          const templates = await fetchNodeTemplates();
+          setTemplateIndex(buildTemplateIndex(templates));
+        } catch (error) {
+          console.warn("No se pudo refrescar el catálogo tras deshacer:", error);
+        }
+      })();
+    },
+    [markDirty, setEdges, setNodes]
+  );
 
   const isSameRuntimeStatus = React.useCallback(
     (a?: WorkflowNodeRuntimeStatus, b?: WorkflowNodeRuntimeStatus) => {
@@ -721,14 +834,16 @@ function EditorInner() {
 
   const openLoadModal = useCallback(() => {
     setSummariesError(null);
+    setWorkflowPendingDelete(null);
     setShowLoadModal(true);
   }, []);
 
   const closeLoadModal = useCallback(() => {
-    if (!loadingWorkflowId) {
+    if (!loadingWorkflowId && !deletingWorkflowId) {
+      setWorkflowPendingDelete(null);
       setShowLoadModal(false);
     }
-  }, [loadingWorkflowId]);
+  }, [deletingWorkflowId, loadingWorkflowId]);
 
   const handleLoadWorkflow = useCallback(
     async (workflowId: string) => {
@@ -747,6 +862,47 @@ function EditorInner() {
     },
     [applyWorkflowRecord]
   );
+
+  const requestDeleteWorkflow = useCallback((summary: WorkflowSummary) => {
+    setSummariesError(null);
+    setWorkflowPendingDelete(summary);
+  }, []);
+
+  const closeDeleteWorkflowConfirm = useCallback(() => {
+    if (!deletingWorkflowId) {
+      setWorkflowPendingDelete(null);
+    }
+  }, [deletingWorkflowId]);
+
+  const handleDeleteWorkflow = useCallback(async () => {
+    if (!workflowPendingDelete) {
+      return;
+    }
+    const targetId = workflowPendingDelete.workflowId;
+    setDeletingWorkflowId(targetId);
+    setSummariesError(null);
+    try {
+      await deleteWorkflow(targetId);
+      setWorkflowSummaries((prev) =>
+        prev.filter((summary) => summary.workflowId !== targetId)
+      );
+      if (activeWorkflow?.workflowId === targetId) {
+        setActiveWorkflow(null);
+        setHasUnsavedChanges(true);
+        setSaveNotice(null);
+        setPendingOverwriteName(null);
+      }
+      if (loadingWorkflowId === targetId) {
+        setLoadingWorkflowId(null);
+      }
+      setWorkflowPendingDelete(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error eliminando el workflow.";
+      setSummariesError(message);
+    } finally {
+      setDeletingWorkflowId(null);
+    }
+  }, [activeWorkflow?.workflowId, loadingWorkflowId, workflowPendingDelete]);
 
   const confirmNewWorkflow = useCallback(() => {
     setNodes([]);
@@ -927,7 +1083,10 @@ function EditorInner() {
 
   return (
     <div className="flex h-screen w-full bg-gray-50 dark:bg-gray-900">
-      <Sidebar />
+      <Sidebar
+        onTemplatesDeleted={handleTemplatesDeleted}
+        onTemplatesRestored={handleTemplatesRestored}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Modern Header */}
         <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm z-10 dark:bg-gray-900 dark:border-gray-800">
@@ -1240,12 +1399,9 @@ function EditorInner() {
                 )}
                 <div className="grid gap-3">
                   {workflowSummaries.map((summary) => (
-                    <button
+                    <div
                       key={summary.workflowId}
-                      type="button"
-                      onClick={() => handleLoadWorkflow(summary.workflowId)}
-                      disabled={loadingWorkflowId === summary.workflowId}
-                      className="cursor-pointer flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-70 dark:border-gray-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/30"
+                      className="flex w-full items-center justify-between rounded border border-gray-200 px-4 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50 dark:border-gray-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/30"
                     >
                       <div>
                         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{summary.name}</p>
@@ -1261,10 +1417,31 @@ function EditorInner() {
                           </p>
                         )}
                       </div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
-                        {loadingWorkflowId === summary.workflowId ? "Cargando…" : "Cargar"}
-                      </span>
-                    </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadWorkflow(summary.workflowId)}
+                          disabled={
+                            loadingWorkflowId === summary.workflowId ||
+                            deletingWorkflowId === summary.workflowId
+                          }
+                          className="cursor-pointer rounded border border-indigo-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+                        >
+                          {loadingWorkflowId === summary.workflowId ? "Cargando…" : "Cargar"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestDeleteWorkflow(summary)}
+                          disabled={
+                            loadingWorkflowId === summary.workflowId ||
+                            deletingWorkflowId === summary.workflowId
+                          }
+                          className="cursor-pointer rounded border border-rose-200 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                        >
+                          {deletingWorkflowId === summary.workflowId ? "Eliminando…" : "Eliminar"}
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1272,6 +1449,35 @@ function EditorInner() {
           </div>
         )
       }
+      {workflowPendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm dark:bg-black/60">
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl ring-1 ring-gray-900/5 dark:bg-gray-900 dark:ring-gray-800/60">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">¿Eliminar workflow guardado?</h3>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Se eliminará <span className="font-semibold">{workflowPendingDelete.name}</span> de la base de datos.
+            </p>
+            {summariesError && <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{summariesError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeDeleteWorkflowConfirm}
+                disabled={Boolean(deletingWorkflowId)}
+                className="cursor-pointer rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:ring-offset-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteWorkflow}
+                disabled={Boolean(deletingWorkflowId)}
+                className="cursor-pointer rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 dark:focus:ring-offset-gray-900"
+              >
+                {deletingWorkflowId ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }

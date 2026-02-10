@@ -236,3 +236,15 @@ class WorkflowStore:
 
             session.flush()
             return _row_to_record(row)
+
+    def delete_workflow(self, workflow_id: str) -> str:
+        with db_session() as session:
+            row = session.get(WorkflowRecordDB, workflow_id)
+            if not row:
+                raise WorkflowNotFoundError(
+                    f"No se encontró el workflow con id '{workflow_id}'."
+                )
+
+            session.delete(row)
+            session.flush()
+            return workflow_id
