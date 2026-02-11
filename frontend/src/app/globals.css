@@ -15,6 +15,10 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .04);
   --primary: 14, 165, 233;
   --secondary: 236, 72, 153;
+  --scrollbar-track: 241, 245, 249;
+  --scrollbar-thumb: 148, 163, 184;
+  --scrollbar-thumb-hover: 100, 116, 139;
+  color-scheme: light;
 }
 
 /* OS preference: dark by default unless explicitly set to light */
@@ -29,6 +33,10 @@
     --shadow: 0 4px 20px rgba(0, 0, 0, .5);
     --primary: 96, 165, 250;
     --secondary: 236, 72, 153;
+    --scrollbar-track: 17, 24, 39;
+    --scrollbar-thumb: 71, 85, 105;
+    --scrollbar-thumb-hover: 100, 116, 139;
+    color-scheme: dark;
   }
 }
 
@@ -43,6 +51,10 @@ html.dark {
   --shadow: 0 4px 20px rgba(0, 0, 0, .5);
   --primary: 96, 165, 250;
   --secondary: 236, 72, 153;
+  --scrollbar-track: 17, 24, 39;
+  --scrollbar-thumb: 71, 85, 105;
+  --scrollbar-thumb-hover: 100, 116, 139;
+  color-scheme: dark;
 }
 
 /* Light theme override to beat OS dark when user selects light */
@@ -56,6 +68,10 @@ html.light {
   --shadow: 0 1px 2px rgba(0, 0, 0, .04);
   --primary: 14, 165, 233;
   --secondary: 236, 72, 153;
+  --scrollbar-track: 241, 245, 249;
+  --scrollbar-thumb: 148, 163, 184;
+  --scrollbar-thumb-hover: 100, 116, 139;
+  color-scheme: light;
 }
 
 /* Apply base colors using CSS variables */
@@ -68,6 +84,31 @@ body {
 *:focus-visible {
   outline: 2px solid rgb(var(--ring));
   outline-offset: 2px;
+}
+
+/* Cross-browser scrollbar theming that follows the active theme tokens */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--scrollbar-thumb)) rgb(var(--scrollbar-track));
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgb(var(--scrollbar-track));
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--scrollbar-thumb));
+  border-radius: 9999px;
+  border: 2px solid rgb(var(--scrollbar-track));
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--scrollbar-thumb-hover));
 }
 
 a {
