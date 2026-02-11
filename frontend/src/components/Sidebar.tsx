@@ -100,6 +100,26 @@ function TemplateCard({
     onToggleSelection(template.name);
   };
 
+  const nodeCardContent = (
+    <div
+      role="button"
+      tabIndex={0}
+      draggable={!managing && !disabled}
+      onDragStart={(event) => {
+        if (!managing && !disabled) {
+          onDragStartCatalog(event, template);
+        }
+      }}
+      className={`min-w-0 flex-1 ${managing ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}
+    >
+      <NodeCard label={template.name} variant={variant} tone={tone} compact />
+    </div>
+  );
+
+  if (!managing) {
+    return nodeCardContent;
+  }
+
   return (
     <div
       className={`flex items-center gap-2 rounded border p-1.5 transition ${selected
@@ -119,19 +139,7 @@ function TemplateCard({
           aria-label={`Seleccionar ${template.name}`}
         />
       )}
-      <div
-        role="button"
-        tabIndex={0}
-        draggable={!managing && !disabled}
-        onDragStart={(event) => {
-          if (!managing && !disabled) {
-            onDragStartCatalog(event, template);
-          }
-        }}
-        className={`min-w-0 flex-1 ${managing ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"}`}
-      >
-        <NodeCard label={template.name} variant={variant} tone={tone} compact />
-      </div>
+      {nodeCardContent}
     </div>
   );
 }
