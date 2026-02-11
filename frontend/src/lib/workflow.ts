@@ -98,6 +98,11 @@ export type WorkflowRecord = WorkflowSummary & {
   lastManifestFilename?: string | null;
 };
 
+export type WorkflowDeleteResult = {
+  workflowId: string;
+  deleted: boolean;
+};
+
 export type WorkflowSaveRequest = {
   workflowId?: string;
   name: string;
@@ -344,5 +349,17 @@ export async function getWorkflow(workflowId: string): Promise<WorkflowRecord> {
     throw new Error(message || `HTTP ${response.status}`);
   }
   const payload = (await response.json()) as WorkflowRecord;
+  return payload;
+}
+
+export async function deleteWorkflow(workflowId: string): Promise<WorkflowDeleteResult> {
+  const response = await fetch(`${API_BASE}/workflows/${workflowId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as WorkflowDeleteResult;
   return payload;
 }

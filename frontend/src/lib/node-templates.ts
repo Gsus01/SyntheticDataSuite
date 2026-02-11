@@ -23,6 +23,28 @@ export type CatalogNodeTemplate = {
   parameter_defaults?: Record<string, unknown>;
 };
 
+export type DeleteCatalogComponentResponse = {
+  name: string;
+  version?: string | null;
+  deleted: boolean;
+  componentDeleted: boolean;
+  activeVersion?: string | null;
+};
+
+export type CatalogComponentSummary = {
+  name: string;
+  activeVersion?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type CatalogComponentVersion = {
+  name: string;
+  version: string;
+  spec: Record<string, unknown>;
+  createdAt?: string | null;
+};
+
 const CONFIG_EXTENSIONS = [".yaml", ".yml", ".json"];
 
 export function isConfigArtifact(spec: CatalogArtifact): boolean {
@@ -80,4 +102,77 @@ export async function fetchNodeTemplates(): Promise<CatalogNodeTemplate[]> {
     throw new Error(`HTTP ${response.status}`);
   }
   return (await response.json()) as CatalogNodeTemplate[];
+}
+
+export async function deleteCatalogComponent(
+  templateName: string
+): Promise<DeleteCatalogComponentResponse> {
+  const response = await fetch(`${API_BASE}/components/${encodeURIComponent(templateName)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as DeleteCatalogComponentResponse;
+}
+
+export async function listCatalogComponents(): Promise<CatalogComponentSummary[]> {
+  const response = await fetch(`${API_BASE}/components`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as CatalogComponentSummary[];
+}
+
+export async function getCatalogComponentVersions(
+  templateName: string
+): Promise<CatalogComponentVersion[]> {
+  const response = await fetch(`${API_BASE}/components/${encodeURIComponent(templateName)}`);
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as CatalogComponentVersion[];
+}
+
+export async function registerCatalogComponent(
+  spec: Record<string, unknown>,
+  activate = true
+): Promise<CatalogComponentSummary> {
+  const response = await fetch(`${API_BASE}/components`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      spec,
+      activate,
+    }),
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as CatalogComponentSummary;
+}
+
+export async function activateCatalogComponentVersion(
+  templateName: string,
+  version: string
+): Promise<CatalogComponentSummary> {
+  const response = await fetch(
+    `${API_BASE}/components/${encodeURIComponent(templateName)}/${encodeURIComponent(version)}/activate`,
+    {
+      method: "POST",
+    }
+  );
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return (await response.json()) as CatalogComponentSummary;
 }

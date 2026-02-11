@@ -155,6 +155,13 @@ class WorkflowSummaryResponse(BaseModel):
     last_namespace: Optional[str] = Field(None, alias="lastNamespace")
 
 
+class WorkflowDeleteResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    workflow_id: str = Field(..., alias="workflowId")
+    deleted: bool = True
+
+
 def _record_to_response(record: StoredWorkflowRecord) -> WorkflowRecordResponse:
     return WorkflowRecordResponse.model_validate(record.model_dump(by_alias=True))
 
@@ -1200,3 +1207,16 @@ def get_workflow_definition(workflow_id: str) -> WorkflowRecordResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return _record_to_response(record)
+
+
+@app.delete("/workflows/{workflow_id}", response_model=WorkflowDeleteResponse)
+def delete_workflow_definition(workflow_id: str) -> WorkflowDeleteResponse:
+    store = WorkflowStore()
+    try:
+        deleted_id = store.delete_workflow(workflow_id)
+    except WorkflowDefinitionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkflowStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return WorkflowDeleteResponse(workflowId=deleted_id, deleted=True)
