@@ -50,6 +50,18 @@ export type CancelAllComponentGenerationRunsResult = {
   canceledCount: number;
 };
 
+export type ComponentGenerationFilePreview = {
+  content: string;
+  truncated: boolean;
+  contentType?: string | null;
+  encoding: string;
+  size?: number | null;
+  fileName: string;
+  filePath: string;
+  isBinary: boolean;
+  languageHint?: string | null;
+};
+
 export type ComponentGenerationRunEvent = {
   seq: number;
   timestamp: string;
@@ -195,6 +207,31 @@ export async function cancelAllComponentGenerationRuns(): Promise<CancelAllCompo
     throw new Error(await parseError(response));
   }
   return (await response.json()) as CancelAllComponentGenerationRunsResult;
+}
+
+export async function previewComponentGenerationFile(
+  runId: string,
+  path: string,
+  maxBytes = 65536
+): Promise<ComponentGenerationFilePreview> {
+  const url = buildApiUrl(`/component-generation/runs/${runId}/files/preview`);
+  url.searchParams.set("path", path);
+  url.searchParams.set("maxBytes", String(maxBytes));
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ComponentGenerationFilePreview;
+}
+
+export function buildComponentGenerationFileDownloadUrl(
+  runId: string,
+  path: string
+): string {
+  const url = buildApiUrl(`/component-generation/runs/${runId}/files/download`);
+  url.searchParams.set("path", path);
+  return url.toString();
 }
 
 const EVENT_TYPES = [

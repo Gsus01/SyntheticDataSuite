@@ -36,6 +36,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const root = document.documentElement;
         root.classList.toggle('dark', isDark);
         root.classList.toggle('light', !isDark);
+
+        const themeColor = isDark ? "#0f172a" : "#ffffff";
+        const meta = document.querySelector('meta[name=\"theme-color\"]');
+        if (meta) {
+            meta.setAttribute("content", themeColor);
+        }
     }, [isDark, isThemeReady]);
 
     return (
