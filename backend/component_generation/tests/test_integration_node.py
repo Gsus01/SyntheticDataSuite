@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from component_generation.nodes.integration import node_integration
+from component_generation.nodes.integration import _run_docker_build, node_integration
 
 
 def _write_component(session_dir: Path, *, name: str = "demo-comp") -> dict[str, dict[str, str]]:
@@ -87,7 +88,12 @@ def test_integration_success_builds_and_registers(tmp_path: Path, monkeypatch: p
     build_calls: list[tuple[str, str]] = []
     register_calls: list[tuple[str, str]] = []
 
-    def _fake_build(component_name: str, image: str, folder: Path) -> None:
+    def _fake_build(
+        component_name: str,
+        image: str,
+        folder: Path,
+        **_: Any,
+    ) -> None:
         build_calls.append((component_name, image))
         assert folder.exists()
 
@@ -132,7 +138,12 @@ def test_integration_build_failure_emits_failed_event(
     generated_index = _write_component(tmp_path)
     events: list[tuple[str, dict[str, Any]]] = []
 
-    def _failing_build(component_name: str, image: str, folder: Path) -> None:
+    def _failing_build(
+        component_name: str,
+        image: str,
+        folder: Path,
+        **_: Any,
+    ) -> None:
         del component_name, image, folder
         raise RuntimeError("docker build failed")
 
@@ -154,3 +165,102 @@ def test_integration_build_failure_emits_failed_event(
 
     event_types = [event_type for event_type, _ in events]
     assert "integration_failed" in event_types
+
+
+def test_run_docker_build_completes_after_stdout_eof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = tmp_path / "ctx"
+    context.mkdir(parents=True, exist_ok=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    docker_script = bin_dir / "docker"
+    docker_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo '#1 [1/2] step'\n"
+        "sleep 0.1\n"
+        "echo '#1 DONE 0.1s'\n",
+        encoding="utf-8",
+    )
+    docker_script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    emitted: list[str] = []
+    _run_docker_build(
+        component_name="demo",
+        image="demo:latest",
+        folder=context,
+        emit_line=lambda line, *_: emitted.append(line),
+        timeout_seconds=30,
+        idle_timeout_seconds=2,
+        heartbeat_seconds=1,
+    )
+
+    assert any("DONE" in line for line in emitted)
+
+
+def test_run_docker_build_emits_heartbeat_during_silence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = tmp_path / "ctx"
+    context.mkdir(parents=True, exist_ok=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    docker_script = bin_dir / "docker"
+    docker_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo '#1 [1/2] step'\n"
+        "sleep 2\n"
+        "echo '#1 DONE 2.0s'\n",
+        encoding="utf-8",
+    )
+    docker_script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    emitted: list[str] = []
+    _run_docker_build(
+        component_name="heartbeat-demo",
+        image="heartbeat-demo:latest",
+        folder=context,
+        emit_line=lambda line, *_: emitted.append(line),
+        timeout_seconds=30,
+        idle_timeout_seconds=8,
+        heartbeat_seconds=1,
+    )
+
+    assert any("build still running for heartbeat-demo" in line for line in emitted)
+
+
+def test_run_docker_build_stalls_quickly_when_idle_timeout_exceeded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = tmp_path / "ctx"
+    context.mkdir(parents=True, exist_ok=True)
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    docker_script = bin_dir / "docker"
+    docker_script.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo '#1 [1/2] step'\n"
+        "sleep 4\n"
+        "echo '#1 DONE 4.0s'\n",
+        encoding="utf-8",
+    )
+    docker_script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    with pytest.raises(RuntimeError, match="docker build stalled"):
+        _run_docker_build(
+            component_name="stall-demo",
+            image="stall-demo:latest",
+            folder=context,
+            timeout_seconds=30,
+            idle_timeout_seconds=2,
+            heartbeat_seconds=1,
+        )
