@@ -1,21 +1,27 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
-import ReactFlow, {
+import Link from "next/link";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
+import {
+  ReactFlow,
   addEdge,
   Connection,
+  DefaultEdgeOptions,
   Edge,
-  type NodeProps,
-  Node,
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
   useReactFlow,
   MarkerType,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import Sidebar from "@/components/Sidebar";
-import { DefaultNode, InputNode, OutputNode } from "@/components/nodes/StyledNodes";
+import {
+  DefaultNode,
+  FlowNodeRuntimeProvider,
+  InputNode,
+  OutputNode,
+} from "@/components/nodes/StyledNodes";
 import NodeInspector from "@/components/NodeInspector";
 import WorkflowTerminal from "@/components/WorkflowTerminal";
 import { DND_MIME, NODE_TYPES, NODE_META_MIME, type NodeTypeId } from "@/lib/flow-const";
@@ -25,7 +31,13 @@ import {
   fetchNodeTemplates,
   type CatalogNodeTemplate,
 } from "@/lib/node-templates";
-import type { FlowNodeData, FlowNodePorts, NodeArtifactPort, WorkflowNodeRuntimeStatus } from "@/types/flow";
+import type {
+  FlowNode,
+  FlowNodeData,
+  FlowNodePorts,
+  NodeArtifactPort,
+  WorkflowNodeRuntimeStatus,
+} from "@/types/flow";
 import {
   submitWorkflow,
   fetchWorkflowStatus,
@@ -59,6 +71,16 @@ function createPendingStatus(identifier: string, previous?: WorkflowNodeRuntimeS
 const STATUS_POLL_INTERVAL_FAST = 600;
 const STATUS_POLL_INTERVAL_WAITING = 450;
 const STATUS_POLL_INTERVAL_ERROR = 4000;
+
+const FLOW_DEFAULT_EDGE_OPTIONS: DefaultEdgeOptions = {
+  markerEnd: { type: MarkerType.ArrowClosed },
+};
+
+const FLOW_NODE_TYPES = {
+  [NODE_TYPES.nodeInput]: InputNode,
+  [NODE_TYPES.nodeDefault]: DefaultNode,
+  [NODE_TYPES.nodeOutput]: OutputNode,
+};
 
 let fallbackCounter = 0;
 const createNodeId = () => {
@@ -139,7 +161,7 @@ function formatDateLabel(value?: string | null): string {
   }
 }
 
-function sanitizeNodesForSave(nodes: Node<FlowNodeData>[]): unknown[] {
+function sanitizeNodesForSave(nodes: FlowNode[]): unknown[] {
   return nodes.map((node) => {
     const dataCopy = JSON.parse(JSON.stringify(node.data)) as FlowNodeData;
     delete (dataCopy as Record<string, unknown>).runtimeStatus;
@@ -157,10 +179,9 @@ function sanitizeEdgesForSave(edges: Edge[]): unknown[] {
 }
 
 function EditorInner() {
-  const reactFlowWrapper = useRef<HTMLDivElement | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNodeData>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
-  const { project } = useReactFlow();
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const { screenToFlowPosition } = useReactFlow<FlowNode, Edge>();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [sessionId, setSessionId] = React.useState(() => generateSessionId());
   const [submitting, setSubmitting] = React.useState(false);
@@ -188,6 +209,7 @@ function EditorInner() {
   const [deletingWorkflowId, setDeletingWorkflowId] = React.useState<string | null>(null);
   const [workflowPendingDelete, setWorkflowPendingDelete] = React.useState<WorkflowSummary | null>(null);
   const [templateIndex, setTemplateIndex] = React.useState<Record<string, CatalogNodeTemplate>>({});
+  const [previewRefreshVersion, setPreviewRefreshVersion] = React.useState(0);
   const statusPollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusAbortRef = React.useRef(false);
   const removedTemplatesSnapshotRef = React.useRef<{
@@ -199,14 +221,18 @@ function EditorInner() {
   const showUnsyncedHint = Boolean(compiledState && isCompileDirty);
   const { isDark, toggleTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const OutputNodeWithSession = React.useCallback(
-    (props: NodeProps<FlowNodeData>) => <OutputNode {...props} sessionId={sessionId} />,
-    [sessionId]
-  );
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const bumpPreviewRefresh = useCallback(() => {
+    setPreviewRefreshVersion((prev) => prev + 1);
+  }, []);
+
+  React.useEffect(() => {
+    bumpPreviewRefresh();
+  }, [bumpPreviewRefresh, sessionId]);
 
   const markDirty = useCallback(
     (scope: "all" | "compile" | "layout" = "all") => {
@@ -468,6 +494,7 @@ function EditorInner() {
         (change) => change.type !== "position" && change.type !== "dimensions" && change.type !== "select"
       );
       if (affectsCompile) {
+        bumpPreviewRefresh();
         markDirty("all");
         return;
       }
@@ -478,17 +505,18 @@ function EditorInner() {
         markDirty("layout");
       }
     },
-    [markDirty, onNodesChange]
+    [bumpPreviewRefresh, markDirty, onNodesChange]
   );
 
   const handleEdgesInternalChange = useCallback(
     (changes: Parameters<typeof onEdgesChange>[0]) => {
       onEdgesChange(changes);
       if (changes.some((change) => change.type !== "select")) {
+        bumpPreviewRefresh();
         markDirty("all");
       }
     },
-    [markDirty, onEdgesChange]
+    [bumpPreviewRefresh, markDirty, onEdgesChange]
   );
 
   const onConnect = useCallback(
@@ -502,9 +530,10 @@ function EditorInner() {
           eds
         )
       );
+      bumpPreviewRefresh();
       markDirty("all");
     },
-    [setEdges, markDirty]
+    [bumpPreviewRefresh, markDirty, setEdges]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -544,12 +573,9 @@ function EditorInner() {
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
-      const bounds = reactFlowWrapper.current?.getBoundingClientRect();
-      if (!bounds) return;
-
-      const position = project({
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
       });
 
       const type = event.dataTransfer.getData(DND_MIME) as NodeTypeId;
@@ -587,7 +613,7 @@ function EditorInner() {
       const artifactPorts = metaPorts ?? templatePorts;
 
       const newNodeId = createNodeId();
-      const newNode: Node<FlowNodeData> = {
+      const newNode: FlowNode = {
         id: newNodeId,
         type,
         position,
@@ -605,13 +631,14 @@ function EditorInner() {
       };
 
       setNodes((nds) => nds.concat(newNode));
+      bumpPreviewRefresh();
       markDirty("all");
     },
-    [markDirty, project, setNodes, templateIndex]
+    [bumpPreviewRefresh, markDirty, screenToFlowPosition, setNodes, templateIndex]
   );
 
   const handleSelectionChange = useCallback(
-    ({ nodes: selected }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) => {
+    ({ nodes: selected }: { nodes: FlowNode[]; edges: Edge[] }) => {
       if (selected.length) {
         setSelectedNodeId(selected[0].id);
       } else {
@@ -633,9 +660,10 @@ function EditorInner() {
             : node
         )
       );
+      bumpPreviewRefresh();
       markDirty("all");
     },
-    [markDirty, setNodes]
+    [bumpPreviewRefresh, markDirty, setNodes]
   );
 
   const handleCompileClick = useCallback(async () => {
@@ -715,8 +743,16 @@ function EditorInner() {
         setSubmitResult(null);
       }
       ensureInitialRuntimeStatus();
+      bumpPreviewRefresh();
     },
-    [cancelStatusPolling, ensureInitialRuntimeStatus, setEdges, setNodes, templateIndex]
+    [
+      bumpPreviewRefresh,
+      cancelStatusPolling,
+      ensureInitialRuntimeStatus,
+      setEdges,
+      setNodes,
+      templateIndex,
+    ]
   );
 
   const openSaveModal = useCallback(() => {
@@ -917,7 +953,8 @@ function EditorInner() {
     setSubmitError(null);
     setTerminalOpen(false);
     setShowNewConfirmModal(false);
-  }, [setEdges, setNodes]);
+    bumpPreviewRefresh();
+  }, [bumpPreviewRefresh, setEdges, setNodes]);
 
   const handleNewWorkflowClick = useCallback(() => {
     if (hasUnsavedChanges && nodes.length > 0) {
@@ -935,6 +972,7 @@ function EditorInner() {
     }
     cancelStatusPolling();
     resetNodeRuntimeStatus();
+    bumpPreviewRefresh();
     setSubmitting(true);
     setSubmitError(null);
     setSubmitResult(null);
@@ -981,6 +1019,7 @@ function EditorInner() {
     edges,
     isCompileDirty,
     nodes,
+    bumpPreviewRefresh,
     resetNodeRuntimeStatus,
     sessionId,
   ]);
@@ -1126,6 +1165,12 @@ function EditorInner() {
               >
                 Guardar
               </button>
+              <Link
+                href="/component-generation"
+                className="cursor-pointer rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 shadow-sm hover:bg-indigo-100 hover:text-indigo-800 hover:border-indigo-400 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-indigo-500/40 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20 dark:hover:border-indigo-400/60"
+              >
+                Generar Componentes
+              </Link>
             </div>
           </div>
 
@@ -1214,40 +1259,32 @@ function EditorInner() {
           </div>
         )}
         <div className="relative flex min-h-0 flex-1">
-          <div ref={reactFlowWrapper} className="flex-1 min-h-0">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={handleNodesInternalChange}
-              onEdgesChange={handleEdgesInternalChange}
-              onConnect={onConnect}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onSelectionChange={handleSelectionChange}
-              defaultEdgeOptions={useMemo(
-                () => ({
-                  markerEnd: { type: MarkerType.ArrowClosed },
-                }),
-                []
-              )}
-              nodeTypes={useMemo(
-                () => ({
-                  [NODE_TYPES.nodeInput]: InputNode,
-                  [NODE_TYPES.nodeDefault]: DefaultNode,
-                  [NODE_TYPES.nodeOutput]: OutputNodeWithSession,
-                }),
-                [OutputNodeWithSession]
-              )}
-              fitView
-              className="bg-white dark:bg-gray-900 rf-instance"
-            />
+          <div className="flex-1 min-h-0">
+            <FlowNodeRuntimeProvider
+              sessionId={sessionId}
+              previewRefreshVersion={previewRefreshVersion}
+            >
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={handleNodesInternalChange}
+                onEdgesChange={handleEdgesInternalChange}
+                onConnect={onConnect}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                onSelectionChange={handleSelectionChange}
+                defaultEdgeOptions={FLOW_DEFAULT_EDGE_OPTIONS}
+                nodeTypes={FLOW_NODE_TYPES}
+                fitView
+                className="bg-white dark:bg-gray-900 rf-instance"
+              />
+            </FlowNodeRuntimeProvider>
           </div>
           <NodeInspector
             isOpen={Boolean(selectedNode)}
             node={selectedNode}
             sessionId={sessionId}
-            nodes={nodes}
-            edges={edges}
+            graphRefreshVersion={previewRefreshVersion}
             onChange={handleNodeDataChange}
           />
         </div>
@@ -1257,7 +1294,7 @@ function EditorInner() {
           workflowName={submitResult?.workflowName}
           namespace={submitResult?.namespace}
           nodeSlugMap={submitResult?.nodeSlugMap}
-          nodes={nodes}
+          graphRefreshVersion={previewRefreshVersion}
           submitting={submitting}
           submitResult={submitResult}
           submitError={submitError}

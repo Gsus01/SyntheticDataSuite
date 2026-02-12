@@ -10,8 +10,10 @@ backend:
 	uv sync --project backend
 	uv run --project backend uvicorn main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend
 
+FRONTEND_PORT ?= 3000
+
 frontend:
-	cd frontend && NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
+	cd frontend && NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 PORT=$(FRONTEND_PORT) npm run dev -- --port $(FRONTEND_PORT)
 
 # =============================================================================
 # Kubernetes Deployment (containerized)

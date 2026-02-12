@@ -1,4 +1,4 @@
-import type { Edge, Node } from "reactflow";
+import type { Edge, Node } from "@xyflow/react";
 import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import { API_BASE, buildApiUrl } from "@/lib/api";
 

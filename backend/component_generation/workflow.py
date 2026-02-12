@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Callable, Dict, Optional
+
 from langgraph.graph import END, START, StateGraph
 
 from component_generation.nodes import (
@@ -15,15 +17,39 @@ from component_generation.nodes import (
 from component_generation.state import PipelineState
 
 
-def build_graph() -> StateGraph:
+EventEmitter = Callable[[str, Dict[str, Any]], None]
+
+
+def _wrap_node(
+    name: str,
+    node_fn: Callable[[PipelineState], Dict[str, Any]],
+    emit_event: Optional[EventEmitter],
+) -> Callable[[PipelineState], Dict[str, Any]]:
+    if emit_event is None:
+        return node_fn
+
+    def wrapped(state: PipelineState) -> Dict[str, Any]:
+        emit_event("node_started", {"node": name})
+        try:
+            result = node_fn(state)
+        except Exception as exc:
+            emit_event("node_failed", {"node": name, "error": str(exc)})
+            raise
+        emit_event("node_completed", {"node": name})
+        return result
+
+    return wrapped
+
+
+def build_graph(*, emit_event: Optional[EventEmitter] = None) -> StateGraph:
     builder = StateGraph(PipelineState)
-    builder.add_node("load", node_load)
-    builder.add_node("analyst", node_analyst)
-    builder.add_node("hitl", node_hitl)
-    builder.add_node("developer", node_developer)
-    builder.add_node("tester", node_tester)
-    builder.add_node("repair", node_repair)
-    builder.add_node("integration", node_integration)
+    builder.add_node("load", _wrap_node("load", node_load, emit_event))
+    builder.add_node("analyst", _wrap_node("analyst", node_analyst, emit_event))
+    builder.add_node("hitl", _wrap_node("hitl", node_hitl, emit_event))
+    builder.add_node("developer", _wrap_node("developer", node_developer, emit_event))
+    builder.add_node("tester", _wrap_node("tester", node_tester, emit_event))
+    builder.add_node("repair", _wrap_node("repair", node_repair, emit_event))
+    builder.add_node("integration", _wrap_node("integration", node_integration, emit_event))
 
     builder.add_edge(START, "load")
     builder.add_edge("load", "analyst")

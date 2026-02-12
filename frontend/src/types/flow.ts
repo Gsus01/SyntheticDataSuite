@@ -1,3 +1,5 @@
+import type { Edge, Node } from "@xyflow/react";
+
 export type NodeArtifact = {
   bucket: string;
   key: string;
@@ -39,3 +41,6 @@ export type FlowNodeData = {
   runtimeStatus?: WorkflowNodeRuntimeStatus;
   artifactPorts?: FlowNodePorts;
 };
+
+export type FlowNode = Node<FlowNodeData>;
+export type FlowEdge = Edge;

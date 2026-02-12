@@ -4,6 +4,17 @@
 /* Ensure `dark:` utilities respond to the `.dark` class (manual toggle) */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Tailwind v4 CSS-first semantic tokens */
+@theme inline {
+  --color-background: rgb(var(--bg));
+  --color-foreground: rgb(var(--text));
+  --color-muted: rgb(var(--muted));
+  --color-border: rgb(var(--border));
+  --color-ring: rgb(var(--ring));
+  --color-primary: rgb(var(--primary));
+  --color-secondary: rgb(var(--secondary));
+}
+
 /* Variables base (light mode) */
 :root {
   --bg: 255, 255, 255;
@@ -12,7 +23,7 @@
   --muted: 107, 114, 128;
   --border: 226, 232, 240;
   --ring: 59, 130, 246;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   --primary: 14, 165, 233;
   --secondary: 236, 72, 153;
   --scrollbar-track: 241, 245, 249;
@@ -30,7 +41,7 @@
     --muted: 160, 165, 176;
     --border: 68, 68, 68;
     --ring: 99, 102, 241;
-    --shadow: 0 4px 20px rgba(0, 0, 0, .5);
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     --primary: 96, 165, 250;
     --secondary: 236, 72, 153;
     --scrollbar-track: 17, 24, 39;
@@ -48,7 +59,7 @@ html.dark {
   --muted: 160, 165, 176;
   --border: 68, 68, 68;
   --ring: 99, 102, 241;
-  --shadow: 0 4px 20px rgba(0, 0, 0, .5);
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   --primary: 96, 165, 250;
   --secondary: 236, 72, 153;
   --scrollbar-track: 17, 24, 39;
@@ -65,7 +76,7 @@ html.light {
   --muted: 107, 114, 128;
   --border: 226, 232, 240;
   --ring: 59, 130, 246;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   --primary: 14, 165, 233;
   --secondary: 236, 72, 153;
   --scrollbar-track: 241, 245, 249;

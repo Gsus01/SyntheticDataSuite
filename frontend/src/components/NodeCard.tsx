@@ -52,7 +52,7 @@ const statusThemes: Record<
     label: "Pendiente",
   },
   running: {
-    dotClass: "bg-amber-400 shadow-lg shadow-amber-400/80 node-running-dot",
+    dotClass: "bg-amber-400 shadow-lg shadow-amber-400/80",
     label: "En ejecución",
   },
   succeeded: {
