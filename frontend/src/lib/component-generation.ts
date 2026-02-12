@@ -8,6 +8,8 @@ export type ComponentGenerationRunStatus =
   | "failed"
   | "canceled";
 
+export type ComponentGenerationDecisionStage = "plan" | "integration";
+
 export type ComponentGenerationNodeState = {
   state: string;
   startedAt?: string | null;
@@ -34,10 +36,14 @@ export type ComponentGenerationRunSnapshot = {
   nodeStates: Record<string, ComponentGenerationNodeState>;
   pendingPlan?: Record<string, unknown> | null;
   pendingPrettyPlan?: string | null;
+  pendingIntegration?: Record<string, unknown> | null;
+  decisionStage?: ComponentGenerationDecisionStage | null;
   generatedIndex: Record<string, Record<string, string>>;
   reviewReport?: string | null;
   reviewStatus?: string | null;
   integrationReport?: string | null;
+  integrationStatus?: string | null;
+  integrationResult?: Record<string, unknown> | null;
   logTail?: string[];
   error?: string | null;
   canCancel: boolean;
@@ -71,6 +77,7 @@ export type ComponentGenerationRunEvent = {
     level?: string;
     source?: string;
     prettyPlan?: string;
+    stage?: string;
   };
 };
 
@@ -171,7 +178,11 @@ export async function fetchComponentGenerationRun(
 
 export async function submitComponentGenerationDecision(
   runId: string,
-  payload: { approved: boolean; feedback?: string }
+  payload: {
+    approved: boolean;
+    feedback?: string;
+    stage?: ComponentGenerationDecisionStage;
+  }
 ): Promise<ComponentGenerationRunSnapshot> {
   const response = await fetch(
     `${API_BASE}/component-generation/runs/${runId}/decision`,
@@ -245,6 +256,14 @@ const EVENT_TYPES = [
   "decision_submitted",
   "decision_received",
   "resumed",
+  "integration_summary_ready",
+  "integration_build_started",
+  "integration_build_component_started",
+  "integration_build_component_succeeded",
+  "integration_registration_started",
+  "integration_registration_component_succeeded",
+  "integration_skipped",
+  "integration_failed",
   "log_line",
   "run_finished",
   "run_failed",

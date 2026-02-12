@@ -6,6 +6,9 @@ import type {
 import { DEFAULT_FORM, TERMINAL_STATUSES } from "./constants";
 import type {
   FormState,
+  IntegrationSummaryComponent,
+  IntegrationSummaryFile,
+  IntegrationSummaryView,
   KeyValueLine,
   LogEntry,
   LogFilter,
@@ -47,6 +50,10 @@ export function runStatusBadge(status: string): BadgeVariant {
 
 export function eventSummary(event: ComponentGenerationRunEvent): string {
   const payload = event.payload || {};
+  const stage =
+    typeof payload.stage === "string" && payload.stage.trim()
+      ? payload.stage.trim()
+      : "plan";
   switch (event.type) {
     case "run_queued":
       return "Execution queued";
@@ -61,11 +68,27 @@ export function eventSummary(event: ComponentGenerationRunEvent): string {
     case "plan_proposed":
       return "Agent proposed a generation plan";
     case "waiting_decision":
-      return "Awaiting human-in-the-loop approval";
-    case "decision_made":
-      return `Decision submitted: ${payload.approved ? "Approved" : "Revision requested"}`;
+      return `Awaiting ${stage} approval`;
+    case "decision_submitted":
+      return `Decision submitted (${stage}): ${payload.approved ? "Approved" : "Rejected"}`;
     case "resumed":
       return "Execution resumed after decision";
+    case "integration_summary_ready":
+      return "Integration summary ready for confirmation";
+    case "integration_build_started":
+      return "Docker build started";
+    case "integration_build_component_started":
+      return `Building image for ${payload.component || "component"}`;
+    case "integration_build_component_succeeded":
+      return `Image built for ${payload.component || "component"}`;
+    case "integration_registration_started":
+      return "Component registration started";
+    case "integration_registration_component_succeeded":
+      return `Component registered: ${payload.component || "component"}`;
+    case "integration_skipped":
+      return "Integration skipped by user";
+    case "integration_failed":
+      return `Integration failed: ${payload.error || "Unknown error"}`;
     case "run_finished":
       return "Agent workflow completed successfully";
     case "run_failed":
@@ -280,6 +303,75 @@ export function parsePlanForDisplay(
   };
 }
 
+function parseIntegrationFile(rawFile: unknown): IntegrationSummaryFile | null {
+  const file = asRecord(rawFile);
+  if (!file) return null;
+  const name =
+    typeof file.name === "string" && file.name.trim() ? file.name.trim() : "(sin nombre)";
+  const path =
+    typeof file.path === "string" && file.path.trim() ? file.path.trim() : "(sin path)";
+  return { name, path };
+}
+
+function parseIntegrationComponent(rawComponent: unknown): IntegrationSummaryComponent | null {
+  const component = asRecord(rawComponent);
+  if (!component) return null;
+
+  const filesRaw = Array.isArray(component.files) ? component.files : [];
+  const files = filesRaw
+    .map(parseIntegrationFile)
+    .filter((item): item is IntegrationSummaryFile => Boolean(item));
+
+  return {
+    name:
+      typeof component.name === "string" && component.name.trim()
+        ? component.name
+        : "(sin nombre)",
+    title:
+      typeof component.title === "string" && component.title.trim()
+        ? component.title
+        : "(sin título)",
+    version:
+      typeof component.version === "string" && component.version.trim()
+        ? component.version
+        : "(sin versión)",
+    type:
+      typeof component.type === "string" && component.type.trim()
+        ? component.type
+        : "(sin tipo)",
+    image:
+      typeof component.image === "string" && component.image.trim()
+        ? component.image
+        : "(sin imagen)",
+    description:
+      typeof component.description === "string" && component.description.trim()
+        ? component.description
+        : "",
+    files,
+  };
+}
+
+export function parseIntegrationSummaryForDisplay(
+  pendingIntegration: Record<string, unknown> | null | undefined
+): IntegrationSummaryView {
+  const summary = asRecord(pendingIntegration) || {};
+  const componentsRaw = Array.isArray(summary.components) ? summary.components : [];
+  const components = componentsRaw
+    .map(parseIntegrationComponent)
+    .filter((item): item is IntegrationSummaryComponent => Boolean(item));
+
+  const countRaw = summary.componentCount;
+  const componentCount =
+    typeof countRaw === "number" && Number.isFinite(countRaw) && countRaw >= 0
+      ? Math.trunc(countRaw)
+      : components.length;
+
+  return {
+    componentCount,
+    components,
+  };
+}
+
 export function workflowNodeStateFor(
   run: ComponentGenerationRunSnapshot | null,
   nodeId: string
@@ -379,19 +471,71 @@ export function updateRunFromEvent(
 
   if (event.type === "run_started") {
     next.status = "running";
+    next.decisionStage = null;
   } else if (event.type === "plan_proposed" || event.type === "waiting_decision") {
-    next.status = event.type === "waiting_decision" ? "waiting_decision" : next.status;
-    const plan = payload.plan;
-    if (plan && typeof plan === "object") {
-      next.pendingPlan = plan as Record<string, unknown>;
+    const stage =
+      typeof payload.stage === "string" && payload.stage.trim()
+        ? payload.stage.trim()
+        : "plan";
+    if (event.type === "waiting_decision") {
+      next.status = "waiting_decision";
+      next.decisionStage = stage === "integration" ? "integration" : "plan";
+      if (next.decisionStage === "integration") {
+        const summary = payload.summary;
+        if (summary && typeof summary === "object") {
+          next.pendingIntegration = summary as Record<string, unknown>;
+        }
+        next.integrationStatus = "waiting_confirmation";
+      }
     }
-    if (typeof payload.prettyPlan === "string") {
-      next.pendingPrettyPlan = payload.prettyPlan;
+    if (stage !== "integration") {
+      const plan = payload.plan;
+      if (plan && typeof plan === "object") {
+        next.pendingPlan = plan as Record<string, unknown>;
+      }
+      if (typeof payload.prettyPlan === "string") {
+        next.pendingPrettyPlan = payload.prettyPlan;
+      }
     }
   } else if (event.type === "resumed") {
     next.status = "running";
+    next.decisionStage = null;
+  } else if (event.type === "integration_summary_ready") {
+    const summary = payload.summary;
+    if (summary && typeof summary === "object") {
+      next.pendingIntegration = summary as Record<string, unknown>;
+    }
+  } else if (
+    event.type === "integration_build_started" ||
+    event.type === "integration_build_component_started" ||
+    event.type === "integration_build_component_succeeded"
+  ) {
+    next.integrationStatus = "building";
+  } else if (
+    event.type === "integration_registration_started" ||
+    event.type === "integration_registration_component_succeeded"
+  ) {
+    next.integrationStatus = "registering";
+    const result = payload.result;
+    if (result && typeof result === "object") {
+      next.integrationResult = result as Record<string, unknown>;
+    }
+  } else if (event.type === "integration_skipped") {
+    next.integrationStatus = "skipped_by_user";
+    next.decisionStage = null;
+    const result = payload.result;
+    if (result && typeof result === "object") {
+      next.integrationResult = result as Record<string, unknown>;
+    }
+  } else if (event.type === "integration_failed") {
+    next.integrationStatus = "failed";
+    next.decisionStage = null;
+    if (typeof payload.error === "string") {
+      next.error = payload.error;
+    }
   } else if (event.type === "run_finished") {
     next.status = "succeeded";
+    next.decisionStage = null;
     const generatedIndex = payload.generatedIndex;
     if (generatedIndex && typeof generatedIndex === "object") {
       next.generatedIndex = generatedIndex as Record<string, Record<string, string>>;
@@ -405,13 +549,22 @@ export function updateRunFromEvent(
     if (typeof payload.integrationReport === "string") {
       next.integrationReport = payload.integrationReport;
     }
+    if (typeof payload.integrationStatus === "string") {
+      next.integrationStatus = payload.integrationStatus;
+    }
+    const integrationResult = payload.integrationResult;
+    if (integrationResult && typeof integrationResult === "object") {
+      next.integrationResult = integrationResult as Record<string, unknown>;
+    }
   } else if (event.type === "run_failed") {
     next.status = "failed";
+    next.decisionStage = null;
     if (typeof payload.error === "string") {
       next.error = payload.error;
     }
   } else if (event.type === "run_canceled") {
     next.status = "canceled";
+    next.decisionStage = null;
     next.error = "Run canceled by user.";
   } else if (
     event.type === "node_started" ||

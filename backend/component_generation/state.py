@@ -30,6 +30,10 @@ class PipelineState(TypedDict, total=False):
     review_issues: List[Dict[str, str]]
     repair_attempts: int
     integration_report: str
+    decision_stage: str
+    pending_integration: Dict[str, Any]
+    integration_status: str
+    integration_result: Dict[str, Any]
 
     # optional LLM placeholder
     llm: Optional[Any]

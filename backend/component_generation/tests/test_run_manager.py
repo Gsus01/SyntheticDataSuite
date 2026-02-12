@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 from component_generation.run_manager import (  # noqa: E402
     ComponentGenerationRunManager,
     RunInputFile,
+    RunInvalidStateError,
 )
 
 
@@ -132,3 +133,29 @@ def test_cancel_all_active_runs_cancels_waiting_run(tmp_path: Path) -> None:
         lambda item: item["status"] in {"succeeded", "failed", "canceled"},
     )
     assert final["status"] == "canceled"
+
+
+def test_submit_decision_stage_mismatch_raises(tmp_path: Path) -> None:
+    manager = ComponentGenerationRunManager(output_root=tmp_path)
+    snapshot = manager.start_run(
+        input_files=[
+            RunInputFile(filename="sample.py", content=b"print('hello')\n"),
+        ],
+        options=_base_options(auto_approve=False),
+    )
+    run_id = snapshot["runId"]
+
+    waiting = _wait_until(manager, run_id, lambda item: item["status"] == "waiting_decision")
+    assert waiting["decisionStage"] == "plan"
+
+    try:
+        manager.submit_decision(
+            run_id,
+            approved=True,
+            feedback="",
+            stage="integration",
+        )
+    except RunInvalidStateError:
+        pass
+    else:
+        raise AssertionError("Expected RunInvalidStateError for stage mismatch")

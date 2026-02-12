@@ -5,7 +5,7 @@ import mimetypes
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -62,12 +62,20 @@ class RunResponse(BaseModel):
     node_states: Dict[str, RunNodeState] = Field(default_factory=dict, alias="nodeStates")
     pending_plan: Dict[str, Any] | None = Field(default=None, alias="pendingPlan")
     pending_pretty_plan: str | None = Field(default=None, alias="pendingPrettyPlan")
+    pending_integration: Dict[str, Any] | None = Field(
+        default=None, alias="pendingIntegration"
+    )
+    decision_stage: str | None = Field(default=None, alias="decisionStage")
     generated_index: Dict[str, Dict[str, str]] = Field(
         default_factory=dict, alias="generatedIndex"
     )
     review_report: str | None = Field(default=None, alias="reviewReport")
     review_status: str | None = Field(default=None, alias="reviewStatus")
     integration_report: str | None = Field(default=None, alias="integrationReport")
+    integration_status: str | None = Field(default=None, alias="integrationStatus")
+    integration_result: Dict[str, Any] | None = Field(
+        default=None, alias="integrationResult"
+    )
     log_tail: List[str] = Field(default_factory=list, alias="logTail")
     error: str | None = None
     can_cancel: bool = Field(default=False, alias="canCancel")
@@ -78,6 +86,7 @@ class RunResponse(BaseModel):
 class DecisionPayload(BaseModel):
     approved: bool
     feedback: str | None = None
+    stage: Literal["plan", "integration"] | None = None
 
 
 class CancelAllRunsResponse(BaseModel):
@@ -420,6 +429,7 @@ def submit_run_decision(run_id: str, payload: DecisionPayload) -> RunResponse:
             run_id,
             approved=payload.approved,
             feedback=payload.feedback,
+            stage=payload.stage,
         )
     except RunNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

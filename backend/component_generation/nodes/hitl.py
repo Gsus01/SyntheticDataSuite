@@ -64,10 +64,14 @@ def node_hitl(state: PipelineState) -> Dict[str, Any]:
 
     if hitl_mode == "api":
         pretty_plan = _pretty_plan(plan)
-        _emit_event(state, "plan_proposed", {"plan": plan, "prettyPlan": pretty_plan})
+        _emit_event(
+            state,
+            "plan_proposed",
+            {"stage": "plan", "plan": plan, "prettyPlan": pretty_plan},
+        )
         if state.get("auto_approve"):
             logger.info("hitl: auto-approving plan (api mode)")
-            _emit_event(state, "resumed", {"approved": True})
+            _emit_event(state, "resumed", {"stage": "plan", "approved": True})
             return {"approved": True, "feedback": ""}
 
         decision_getter = state.get("hitl_decision_getter")
@@ -77,9 +81,13 @@ def node_hitl(state: PipelineState) -> Dict[str, Any]:
         _emit_event(
             state,
             "waiting_decision",
-            {"plan": plan, "prettyPlan": pretty_plan},
+            {"stage": "plan", "plan": plan, "prettyPlan": pretty_plan},
         )
-        decision = decision_getter(plan)
+        try:
+            decision = decision_getter(stage="plan", context={"plan": plan})
+        except TypeError:
+            # Backward compatibility with older decision getters.
+            decision = decision_getter(plan)
         approved = bool(decision.get("approved"))
         feedback = (decision.get("feedback") or "").strip()
         if not approved and not feedback:
@@ -87,7 +95,11 @@ def node_hitl(state: PipelineState) -> Dict[str, Any]:
         _emit_event(
             state,
             "resumed",
-            {"approved": approved, "hasFeedback": bool(feedback)},
+            {
+                "stage": "plan",
+                "approved": approved,
+                "hasFeedback": bool(feedback),
+            },
         )
         if approved:
             return {"approved": True, "feedback": ""}

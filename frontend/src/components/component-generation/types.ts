@@ -1,4 +1,5 @@
 import type { Node } from "@xyflow/react";
+import type { ComponentGenerationDecisionStage } from "@/lib/component-generation";
 
 export type FormState = {
   includeMarkdown: boolean;
@@ -77,6 +78,28 @@ export type PlanViewModel = {
   components: PlanComponentView[];
   extraFields: KeyValueLine[];
 };
+
+export type IntegrationSummaryFile = {
+  name: string;
+  path: string;
+};
+
+export type IntegrationSummaryComponent = {
+  name: string;
+  title: string;
+  version: string;
+  type: string;
+  image: string;
+  description: string;
+  files: IntegrationSummaryFile[];
+};
+
+export type IntegrationSummaryView = {
+  componentCount: number;
+  components: IntegrationSummaryComponent[];
+};
+
+export type DecisionStage = ComponentGenerationDecisionStage | null;
 
 export type UiNotice = {
   kind: "info" | "success";

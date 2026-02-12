@@ -105,10 +105,14 @@ class RunRecord:
     options: Dict[str, Any]
     node_states: Dict[str, Dict[str, Any]]
     pending_plan: Dict[str, Any] | None = None
+    pending_integration: Dict[str, Any] | None = None
     generated_index: Dict[str, Dict[str, str]] = field(default_factory=dict)
     review_report: str | None = None
     review_status: str | None = None
     integration_report: str | None = None
+    integration_status: str | None = None
+    integration_result: Dict[str, Any] | None = None
+    decision_stage: str | None = None
     error: str | None = None
     pending_pretty_plan: str | None = None
     cancel_requested: bool = False
@@ -208,21 +212,42 @@ def _worker_main(
             {"line": text, "level": level.upper(), "source": source},
         )
 
-    def wait_for_decision(plan: Dict[str, Any]) -> Dict[str, Any]:
-        del plan
+    def wait_for_decision(
+        *,
+        stage: str,
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        del context
+        expected_stage = (stage or "").strip().lower() or "plan"
         while True:
             message = decision_queue.get()
             if not isinstance(message, dict):
                 continue
             if message.get("action") != "decision":
                 continue
+            incoming_stage = str(message.get("stage") or "").strip().lower()
+            if incoming_stage and incoming_stage != expected_stage:
+                emit_log_line(
+                    f"ignored decision for stage '{incoming_stage}' while waiting for '{expected_stage}'",
+                    "WARNING",
+                    "run_manager",
+                )
+                continue
             approved = bool(message.get("approved"))
             feedback = str(message.get("feedback") or "").strip()
             emit(
                 "decision_received",
-                {"approved": approved, "hasFeedback": bool(feedback)},
+                {
+                    "stage": expected_stage,
+                    "approved": approved,
+                    "hasFeedback": bool(feedback),
+                },
             )
-            return {"approved": approved, "feedback": feedback}
+            return {
+                "stage": expected_stage,
+                "approved": approved,
+                "feedback": feedback,
+            }
 
     emit("run_started", {"runId": run_id})
     emit_log_line(f"run {run_id} started", "INFO", "run_manager")
@@ -310,6 +335,8 @@ def _worker_main(
             "hitl_mode": "api",
             "event_callback": emit,
             "hitl_decision_getter": wait_for_decision,
+            "decision_stage": None,
+            "integration_status": "pending",
         }
 
         graph = build_graph(emit_event=emit)
@@ -322,6 +349,8 @@ def _worker_main(
                 "reviewStatus": final_state.get("review_status"),
                 "reviewReport": final_state.get("review_report"),
                 "integrationReport": final_state.get("integration_report"),
+                "integrationStatus": final_state.get("integration_status"),
+                "integrationResult": final_state.get("integration_result"),
                 "generatedIndex": final_state.get("generated_index") or {},
                 "sessionDir": session_dir,
             },
@@ -424,6 +453,7 @@ class ComponentGenerationRunManager:
                 input_files=input_meta,
                 options=public_options,
                 node_states=_default_node_states(),
+                integration_status="pending",
                 process=process,
                 event_queue=event_queue,
                 decision_queue=decision_queue,
@@ -470,9 +500,15 @@ class ComponentGenerationRunManager:
             return events, terminal
 
     def submit_decision(
-        self, run_id: str, *, approved: bool, feedback: str | None
+        self,
+        run_id: str,
+        *,
+        approved: bool,
+        feedback: str | None,
+        stage: str | None = None,
     ) -> Dict[str, Any]:
         clean_feedback = (feedback or "").strip()
+        requested_stage = (stage or "").strip().lower() or None
         with self._lock:
             record = self._runs.get(run_id)
             if record is None:
@@ -485,10 +521,17 @@ class ComponentGenerationRunManager:
                 raise RunInvalidStateError(
                     f"Run '{run_id}' cannot receive decisions right now"
                 )
+            if requested_stage and record.decision_stage:
+                if requested_stage != record.decision_stage:
+                    raise RunInvalidStateError(
+                        f"Run '{run_id}' is waiting for stage '{record.decision_stage}', not '{requested_stage}'"
+                    )
+            resolved_stage = record.decision_stage or requested_stage or "plan"
 
             record.decision_queue.put(
                 {
                     "action": "decision",
+                    "stage": resolved_stage,
                     "approved": bool(approved),
                     "feedback": clean_feedback,
                 }
@@ -496,7 +539,11 @@ class ComponentGenerationRunManager:
             self._append_event_locked(
                 record,
                 "decision_submitted",
-                {"approved": bool(approved), "hasFeedback": bool(clean_feedback)},
+                {
+                    "stage": resolved_stage,
+                    "approved": bool(approved),
+                    "hasFeedback": bool(clean_feedback),
+                },
             )
             self._persist_run_meta_locked(record)
             return self._snapshot_locked(record)
@@ -567,6 +614,7 @@ class ComponentGenerationRunManager:
                     if record.status not in TERMINAL_RUN_STATUSES:
                         if record.cancel_requested:
                             record.status = "canceled"
+                            record.decision_stage = None
                             record.error = record.error or "Run canceled by user."
                             self._append_event_locked(
                                 record,
@@ -575,15 +623,19 @@ class ComponentGenerationRunManager:
                             )
                         elif exit_code == 0:
                             record.status = "succeeded"
+                            record.decision_stage = None
                             self._append_event_locked(
                                 record, "run_finished", {"exitCode": exit_code}
                             )
                         else:
                             record.status = "failed"
+                            record.decision_stage = None
                             record.error = (
                                 record.error
                                 or f"Component generation worker exited with code {exit_code}"
                             )
+                            if not record.integration_status and record.pending_integration:
+                                record.integration_status = "failed"
                             self._append_event_locked(
                                 record,
                                 "run_failed",
@@ -617,6 +669,7 @@ class ComponentGenerationRunManager:
             if event_type == "run_started":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "running"
+                record.decision_stage = None
             elif event_type == "log_line":
                 line = payload.get("line")
                 if isinstance(line, str):
@@ -631,18 +684,32 @@ class ComponentGenerationRunManager:
                 pretty_plan = payload.get("prettyPlan")
                 if isinstance(pretty_plan, str):
                     record.pending_pretty_plan = pretty_plan
+            elif event_type == "integration_summary_ready":
+                summary = payload.get("summary")
+                if isinstance(summary, dict):
+                    record.pending_integration = summary
+                    record.integration_result = None
             elif event_type == "waiting_decision":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "waiting_decision"
-                plan = payload.get("plan")
-                if isinstance(plan, dict):
-                    record.pending_plan = plan
-                pretty_plan = payload.get("prettyPlan")
-                if isinstance(pretty_plan, str):
-                    record.pending_pretty_plan = pretty_plan
-            elif event_type == "resumed":
+                stage = str(payload.get("stage") or "plan").strip().lower() or "plan"
+                record.decision_stage = stage
+                if stage == "integration":
+                    summary = payload.get("summary")
+                    if isinstance(summary, dict):
+                        record.pending_integration = summary
+                    record.integration_status = "waiting_confirmation"
+                else:
+                    plan = payload.get("plan")
+                    if isinstance(plan, dict):
+                        record.pending_plan = plan
+                    pretty_plan = payload.get("prettyPlan")
+                    if isinstance(pretty_plan, str):
+                        record.pending_pretty_plan = pretty_plan
+            elif event_type in {"decision_received", "resumed"}:
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "running"
+                record.decision_stage = None
             elif event_type == "node_started":
                 node_name = str(payload.get("node") or "").strip()
                 if node_name:
@@ -691,6 +758,32 @@ class ComponentGenerationRunManager:
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "failed"
                 record.error = error_msg
+                record.decision_stage = None
+            elif event_type in {
+                "integration_build_started",
+                "integration_build_component_started",
+                "integration_build_component_succeeded",
+            }:
+                record.integration_status = "building"
+            elif event_type == "integration_registration_started":
+                record.integration_status = "registering"
+            elif event_type == "integration_registration_component_succeeded":
+                record.integration_status = "registering"
+                result = payload.get("result")
+                if isinstance(result, dict):
+                    record.integration_result = result
+            elif event_type == "integration_skipped":
+                record.integration_status = "skipped_by_user"
+                result = payload.get("result")
+                if isinstance(result, dict):
+                    record.integration_result = result
+                record.decision_stage = None
+            elif event_type == "integration_failed":
+                record.integration_status = "failed"
+                error_msg = payload.get("error")
+                if isinstance(error_msg, str) and error_msg.strip():
+                    record.error = error_msg.strip()
+                record.decision_stage = None
             elif event_type == "run_finished":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "succeeded"
@@ -706,12 +799,26 @@ class ComponentGenerationRunManager:
                 integration_report = payload.get("integrationReport")
                 if isinstance(integration_report, str):
                     record.integration_report = integration_report
+                integration_status = payload.get("integrationStatus")
+                if isinstance(integration_status, str):
+                    record.integration_status = integration_status
+                integration_result = payload.get("integrationResult")
+                if isinstance(integration_result, dict):
+                    record.integration_result = integration_result
+                record.decision_stage = None
                 self._clear_active_run_locked(run_id)
             elif event_type == "run_failed":
                 if record.status not in TERMINAL_RUN_STATUSES:
                     record.status = "failed"
                 record.error = str(payload.get("error") or "Run failed")
+                if not record.integration_status and record.pending_integration:
+                    record.integration_status = "failed"
+                record.decision_stage = None
                 self._clear_active_run_locked(run_id)
+            elif event_type == "run_canceled":
+                if record.status not in TERMINAL_RUN_STATUSES:
+                    record.status = "canceled"
+                record.decision_stage = None
 
             self._persist_run_meta_locked(record)
 
@@ -760,6 +867,7 @@ class ComponentGenerationRunManager:
         run_id = record.run_id
         record.cancel_requested = True
         record.status = "canceled"
+        record.decision_stage = None
         record.error = record.error or "Run canceled by user."
         self._append_event_locked(
             record,
@@ -822,10 +930,14 @@ class ComponentGenerationRunManager:
             "nodeStates": record.node_states,
             "pendingPlan": record.pending_plan,
             "pendingPrettyPlan": record.pending_pretty_plan,
+            "pendingIntegration": record.pending_integration,
+            "decisionStage": record.decision_stage,
             "generatedIndex": record.generated_index,
             "reviewReport": record.review_report,
             "reviewStatus": record.review_status,
             "integrationReport": record.integration_report,
+            "integrationStatus": record.integration_status,
+            "integrationResult": record.integration_result,
             "logTail": record.log_lines[-LOG_TAIL_LINES:],
             "error": record.error,
             "canCancel": record.status in ACTIVE_RUN_STATUSES,

@@ -34,6 +34,7 @@ import {
   MAX_LOG_ENTRIES,
 } from "./component-generation/constants";
 import { HitlReviewPanel } from "./component-generation/HitlReviewPanel";
+import { IntegrationConfirmPanel } from "./component-generation/IntegrationConfirmPanel";
 import { ToggleSwitch } from "./component-generation/ToggleSwitch";
 import {
   Badge,
@@ -61,6 +62,7 @@ import {
   isTerminal,
   levelClass,
   parsePersistedFormState,
+  parseIntegrationSummaryForDisplay,
   parsePlanForDisplay,
   parseSnapshotLogLine,
   runStatusBadge,
@@ -68,6 +70,12 @@ import {
   updateRunFromEvent,
   workflowNodeStateFor,
 } from "./component-generation/utils";
+
+type IntegrationUploadDialogState = {
+  runId: string;
+  registeredComponents: Array<{ name: string; version: string }>;
+  builtImages: string[];
+};
 
 export default function ComponentGenerationPage() {
   const { isDark, toggleTheme } = useTheme();
@@ -90,11 +98,14 @@ export default function ComponentGenerationPage() {
   const [mounted, setMounted] = React.useState(false);
   const [notice, setNotice] = React.useState<UiNotice | null>(null);
   const [confirmCancelAll, setConfirmCancelAll] = React.useState(false);
+  const [integrationUploadDialog, setIntegrationUploadDialog] =
+    React.useState<IntegrationUploadDialogState | null>(null);
 
   const eventSourceRef = React.useRef<EventSource | null>(null);
   const logContainerRef = React.useRef<HTMLDivElement | null>(null);
   const nextLogIdRef = React.useRef(1);
   const noticeTimeoutRef = React.useRef<number | null>(null);
+  const shownIntegrationDialogRunsRef = React.useRef<Set<string>>(new Set());
 
   const nextLogId = React.useCallback((): string => {
     const value = nextLogIdRef.current;
@@ -292,7 +303,9 @@ export default function ComponentGenerationPage() {
         const rawMessage = run?.nodeStates?.[item.id]?.message;
         const message =
           state === "waiting_decision"
-            ? "Waiting for manual approval"
+            ? run?.decisionStage === "integration"
+              ? "Waiting for integration confirmation"
+              : "Waiting for plan approval"
             : rawMessage;
         return {
           id: item.id,
@@ -355,6 +368,61 @@ export default function ComponentGenerationPage() {
     () => parsePlanForDisplay(run?.pendingPlan),
     [run?.pendingPlan]
   );
+  const integrationSummary = React.useMemo(
+    () => parseIntegrationSummaryForDisplay(run?.pendingIntegration),
+    [run?.pendingIntegration]
+  );
+  const decisionStage = React.useMemo<"plan" | "integration" | null>(() => {
+    if (!run?.awaitingDecision) return null;
+    if (run.decisionStage === "integration") return "integration";
+    if (run.decisionStage === "plan") return "plan";
+    if (run.pendingIntegration) return "integration";
+    return "plan";
+  }, [run?.awaitingDecision, run?.decisionStage, run?.pendingIntegration]);
+
+  React.useEffect(() => {
+    if (!run?.runId) return;
+    if (run.status !== "succeeded" || run.integrationStatus !== "completed") return;
+    if (shownIntegrationDialogRunsRef.current.has(run.runId)) return;
+
+    const result =
+      run.integrationResult && typeof run.integrationResult === "object"
+        ? (run.integrationResult as Record<string, unknown>)
+        : null;
+
+    const registeredRaw = Array.isArray(result?.registeredComponents)
+      ? result.registeredComponents
+      : [];
+    const registeredComponents = registeredRaw
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const row = item as Record<string, unknown>;
+        const name =
+          typeof row.name === "string" && row.name.trim()
+            ? row.name.trim()
+            : "(sin nombre)";
+        const version =
+          typeof row.version === "string" && row.version.trim()
+            ? row.version.trim()
+            : "(sin versión)";
+        return { name, version };
+      })
+      .filter((item): item is { name: string; version: string } => Boolean(item));
+
+    const builtImagesRaw = Array.isArray(result?.builtImages)
+      ? result.builtImages
+      : [];
+    const builtImages = builtImagesRaw.filter(
+      (item): item is string => typeof item === "string" && item.trim().length > 0
+    );
+
+    shownIntegrationDialogRunsRef.current.add(run.runId);
+    setIntegrationUploadDialog({
+      runId: run.runId,
+      registeredComponents,
+      builtImages,
+    });
+  }, [run]);
 
   const startRun = React.useCallback(async () => {
     if (!selectedFiles.length) {
@@ -363,11 +431,13 @@ export default function ComponentGenerationPage() {
     }
     setStarting(true);
     setError(null);
+    setIntegrationUploadDialog(null);
     try {
       const snapshot = await createComponentGenerationRun({
         files: selectedFiles,
         includeMarkdown: form.includeMarkdown,
         maxCharsPerFile: form.maxCharsPerFile,
+        runIntegration: true,
         provider: form.provider,
         model: form.model,
         temperature: form.temperature,
@@ -391,14 +461,19 @@ export default function ComponentGenerationPage() {
   }, [connectStream, form, hydrateLogsFromSnapshot, selectedFiles]);
 
   const submitDecision = React.useCallback(
-    async (approved: boolean) => {
+    async (approved: boolean, stage?: "plan" | "integration") => {
       if (!run) return;
       setDecisionLoading(true);
       setError(null);
       try {
+        const resolvedStage =
+          stage ||
+          (run.decisionStage === "integration" ? "integration" : "plan");
         const snapshot = await submitComponentGenerationDecision(run.runId, {
           approved,
-          feedback: approved ? "" : feedback,
+          feedback:
+            approved || resolvedStage === "integration" ? "" : feedback,
+          stage: resolvedStage,
         });
         setRun(snapshot);
         if (approved) {
@@ -896,14 +971,24 @@ export default function ComponentGenerationPage() {
                 }`}
             >
               {run?.awaitingDecision ? (
-                <HitlReviewPanel
-                  planViewModel={planViewModel}
-                  feedback={feedback}
-                  onFeedbackChange={setFeedback}
-                  onApprove={() => void submitDecision(true)}
-                  onRequestChanges={() => void submitDecision(false)}
-                  decisionLoading={decisionLoading}
-                />
+                decisionStage === "integration" ? (
+                  <IntegrationConfirmPanel
+                    run={run}
+                    summary={integrationSummary}
+                    decisionLoading={decisionLoading}
+                    onApprove={() => void submitDecision(true, "integration")}
+                    onReject={() => void submitDecision(false, "integration")}
+                  />
+                ) : (
+                  <HitlReviewPanel
+                    planViewModel={planViewModel}
+                    feedback={feedback}
+                    onFeedbackChange={setFeedback}
+                    onApprove={() => void submitDecision(true, "plan")}
+                    onRequestChanges={() => void submitDecision(false, "plan")}
+                    decisionLoading={decisionLoading}
+                  />
+                )
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-3 py-2 dark:border-slate-700">
@@ -965,6 +1050,78 @@ export default function ComponentGenerationPage() {
           </section>
         </main>
       </div>
+
+      {integrationUploadDialog ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[1px]">
+          <div className="w-[min(94vw,34rem)] rounded-2xl border border-emerald-300 bg-white p-4 shadow-2xl dark:border-emerald-700 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                  Componentes Subidos Correctamente
+                </h3>
+                <p className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">
+                  Run <span className="font-mono">{integrationUploadDialog.runId}</span>
+                </p>
+              </div>
+              <Badge variant="success">OK</Badge>
+            </div>
+
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-[12px] dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="font-semibold text-slate-800 dark:text-slate-100">
+                {integrationUploadDialog.registeredComponents.length} componente(s) registrado(s)
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {integrationUploadDialog.registeredComponents.length === 0 ? (
+                <p className="text-[12px] text-slate-500 dark:text-slate-400">
+                  No se recibió detalle de componentes en la respuesta de integración.
+                </p>
+              ) : (
+                <div className="max-h-48 space-y-1 overflow-y-auto [scrollbar-gutter:stable]">
+                  {integrationUploadDialog.registeredComponents.map((component) => (
+                    <div
+                      key={`${component.name}-${component.version}`}
+                      className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[12px] dark:border-slate-700 dark:bg-slate-800/40"
+                    >
+                      <span className="font-mono text-slate-700 dark:text-slate-200">
+                        {component.name}
+                      </span>
+                      <span className="text-slate-500 dark:text-slate-400">
+                        {component.version}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {integrationUploadDialog.builtImages.length > 0 ? (
+              <details className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] dark:border-slate-700 dark:bg-slate-800/40">
+                <summary className="cursor-pointer font-semibold text-slate-600 dark:text-slate-300">
+                  Imágenes construidas ({integrationUploadDialog.builtImages.length})
+                </summary>
+                <div className="mt-2 max-h-24 space-y-1 overflow-y-auto font-mono text-slate-600 [scrollbar-gutter:stable] dark:text-slate-300">
+                  {integrationUploadDialog.builtImages.map((image) => (
+                    <div key={image}>{image}</div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+            <div className="mt-4 flex justify-end">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => setIntegrationUploadDialog(null)}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
