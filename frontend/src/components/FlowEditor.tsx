@@ -610,13 +610,29 @@ function EditorInner() {
     [markDirty, project, setNodes, templateIndex]
   );
 
+  const handleNodeClick = useCallback((event: React.MouseEvent, node: Node<FlowNodeData>) => {
+    if (event.shiftKey) {
+      setSelectedNodeId(null);
+      return;
+    }
+    setSelectedNodeId(node.id);
+  }, []);
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+  }, []);
+
   const handleSelectionChange = useCallback(
     ({ nodes: selected }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) => {
-      if (selected.length) {
-        setSelectedNodeId(selected[0].id);
-      } else {
+      if (selected.length !== 1) {
         setSelectedNodeId(null);
+        return;
       }
+
+      const singleSelectedId = selected[0].id;
+      setSelectedNodeId((currentSelectedId) =>
+        currentSelectedId === singleSelectedId ? currentSelectedId : null
+      );
     },
     []
   );
@@ -1223,6 +1239,8 @@ function EditorInner() {
               onConnect={onConnect}
               onDrop={onDrop}
               onDragOver={onDragOver}
+              onNodeClick={handleNodeClick}
+              onPaneClick={handlePaneClick}
               onSelectionChange={handleSelectionChange}
               defaultEdgeOptions={useMemo(
                 () => ({
