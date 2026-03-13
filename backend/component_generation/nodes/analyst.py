@@ -12,6 +12,7 @@ from component_generation.llm_trace import write_llm_request, write_llm_response
 from component_generation.schemas import ExtractionPlan
 from component_generation.schemas import ComponentType
 from component_generation.state import PipelineState
+from component_generation.validation import validate_generated_component_plan
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,10 @@ def _validate_plan_paths(plan: Dict[str, Any]) -> None:
     components = plan.get("components") or []
     for comp in components:
         name = comp.get("name", "component")
-        ctype = comp.get("type")
-        if ctype == "input":
-            errors.append(
-                f"{name}: input components are not allowed (use built-in input node)"
-            )
+        try:
+            validate_generated_component_plan(comp)
+        except ValueError as exc:
+            errors.append(str(exc))
         for port in comp.get("inputs") or []:
             path = port.get("path")
             role = port.get("role")

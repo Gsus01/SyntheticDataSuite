@@ -8,5 +8,6 @@ Do NOT serialize JSON objects as strings:
 - `parameters.defaults` must be a JSON object, not a string or list.
 If any element of `io.inputs`/`io.outputs` is a string, the output is INVALID.
 If `parameters.defaults` is not an object, the output is INVALID.
+`metadata.type` must never be `input` or `output` for generated components.
 Self-check before output: ensure `io.inputs` and `io.outputs` are arrays of objects,
 and `parameters.defaults` is a JSON object.

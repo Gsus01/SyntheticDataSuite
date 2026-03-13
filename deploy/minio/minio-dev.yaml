@@ -1,11 +1,3 @@
-# Deploys a new Namespace for the MinIO Pod
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: minio-dev # Change this value if you want a different namespace name
-  labels:
-    name: minio-dev # Change this value to match metadata.name
----
 # Deploys a new MinIO Pod into the metadata.namespace Kubernetes namespace
 #
 # The `spec.containers[0].args` contains the command run on the pod
@@ -36,5 +28,5 @@ spec:
   volumes:
   - name: localvolume
     hostPath: # MinIO generally recommends using locally-attached volumes
-      path: /home/gsus/minio/ # Specify a path to a local drive or volume on the Kubernetes worker node
+      path: /data/minio-dev # Local path inside the minikube node used for dev persistence
       type: DirectoryOrCreate # The path to the last directory must exist
