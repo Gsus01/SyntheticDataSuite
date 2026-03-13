@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from component_generation.state import PipelineState
+from component_generation.validation import validate_generated_componentspec
 from component_spec import ComponentSpec
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,13 @@ def node_tester(state: PipelineState) -> Dict[str, object]:
         image = spec.runtime.image if spec.runtime else None
         if image and image != image.lower():
             msg = f"runtime.image not lowercase: {image}"
+            issues.append(f"[{name}] {msg}")
+            structured.append({"component": name, "message": msg})
+
+        try:
+            validate_generated_componentspec(spec, component_name=name)
+        except ValueError as exc:
+            msg = str(exc)
             issues.append(f"[{name}] {msg}")
             structured.append({"component": name, "message": msg})
 

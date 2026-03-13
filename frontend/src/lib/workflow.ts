@@ -1,11 +1,10 @@
-import type { Edge, Node } from "@xyflow/react";
-import type { FlowNodeData, WorkflowNodeRuntimeStatus } from "@/types/flow";
+import type { FlowEdge, FlowNode, WorkflowNodeRuntimeStatus } from "@/types/flow";
 import { API_BASE, buildApiUrl } from "@/lib/api";
 
 export type SubmitWorkflowRequest = {
   sessionId: string;
-  nodes: Node<FlowNodeData>[];
-  edges: Edge[];
+  nodes: FlowNode[];
+  edges: FlowEdge[];
   workflowId?: string;
 };
 
@@ -87,8 +86,8 @@ export type WorkflowSummary = {
 
 export type WorkflowRecord = WorkflowSummary & {
   sessionId: string;
-  nodes: Node<FlowNodeData>[];
-  edges: Edge[];
+  nodes: FlowNode[];
+  edges: FlowEdge[];
   compiledManifest?: string | null;
   compiledAt?: string | null;
   manifestFilename?: string | null;
@@ -115,7 +114,7 @@ export type WorkflowSaveRequest = {
   nodeSlugMap?: Record<string, string>;
 };
 
-function serializeNodes(nodes: Node<FlowNodeData>[]) {
+function serializeNodes(nodes: FlowNode[]) {
   return nodes.map(({ id, type, data }) => {
     const { runtimeStatus, artifactPorts, ...rest } = data;
     void runtimeStatus;
@@ -124,7 +123,7 @@ function serializeNodes(nodes: Node<FlowNodeData>[]) {
   });
 }
 
-function serializeEdges(edges: Edge[]) {
+function serializeEdges(edges: FlowEdge[]) {
   return edges.map(({ id, source, target, sourceHandle, targetHandle }) => ({
     id,
     source,

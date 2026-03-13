@@ -11,6 +11,10 @@ from component_generation.llm import LLMClient
 from component_generation.llm_trace import write_llm_request, write_llm_response
 from component_generation.schemas import GeneratedComponentFiles
 from component_generation.state import PipelineState
+from component_generation.validation import (
+    validate_generated_component_plan,
+    validate_generated_componentspec,
+)
 from component_spec import ComponentSpec
 
 logger = logging.getLogger(__name__)
@@ -175,6 +179,7 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
     generated_index: Dict[str, Dict[str, str]] = {}
 
     for comp in components:
+        validate_generated_component_plan(comp)
         raw_name = comp.get("name") or "component"
         name = _sanitize_kebab(raw_name)
         comp_type = comp.get("type") or "other"
@@ -242,7 +247,8 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
                     logger.debug("developer: LLM raw response for %s:\n%s", name, raw.strip())
                 files = GeneratedComponentFiles.model_validate_json(raw)
                 try:
-                    ComponentSpec.model_validate(files.componentspec)
+                    spec = ComponentSpec.model_validate(files.componentspec)
+                    validate_generated_componentspec(spec, component_name=name)
                 except Exception as exc:
                     logger.error(
                         "developer: invalid ComponentSpec for %s: %s", name, exc
@@ -277,6 +283,10 @@ def node_developer(state: PipelineState) -> Dict[str, Any]:
             main_path.write_text(_render_main_py(comp), encoding="utf-8")
             docker_path.write_text(_render_dockerfile(), encoding="utf-8")
             spec_payload = _render_componentspec(comp, name)
+            validate_generated_componentspec(
+                ComponentSpec.model_validate(spec_payload),
+                component_name=name,
+            )
             spec_path.write_text(
                 json.dumps(spec_payload, indent=2, ensure_ascii=False),
                 encoding="utf-8",

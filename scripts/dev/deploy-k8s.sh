@@ -15,6 +15,10 @@ set -euo pipefail
 # =============================================================================
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROFILE="${MINIKUBE_PROFILE:-minikube}"
+DRIVER="${MINIKUBE_DRIVER:-docker}"
+MINIKUBE_CPUS="${MINIKUBE_CPUS:-4}"
+MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-8192}"
 
 info()  { echo "[deploy] $*"; }
 warn()  { echo "[deploy][warn] $*" >&2; }
@@ -45,9 +49,13 @@ check_prerequisites() {
   fi
   
   # Check minikube is running
-  if ! minikube status &>/dev/null; then
-    info "Iniciando minikube..."
-    minikube start
+  if ! minikube status --profile "$PROFILE" &>/dev/null; then
+    info "Iniciando minikube (perfil=$PROFILE, driver=$DRIVER, cpus=$MINIKUBE_CPUS, memoria=${MINIKUBE_MEMORY}MB)..."
+    minikube start \
+      --profile "$PROFILE" \
+      --driver "$DRIVER" \
+      --cpus "$MINIKUBE_CPUS" \
+      --memory "$MINIKUBE_MEMORY"
   fi
   
   info "✓ Prerequisitos OK"
@@ -57,11 +65,11 @@ check_prerequisites() {
 # Enable ingress addon
 # -----------------------------------------------------------------------------
 enable_ingress() {
-  if minikube addons list | grep -q "ingress.*enabled"; then
+  if minikube -p "$PROFILE" addons list | grep -q "ingress.*enabled"; then
     info "✓ Ingress addon ya habilitado"
   else
     info "Habilitando ingress addon..."
-    minikube addons enable ingress
+    minikube -p "$PROFILE" addons enable ingress
     info "Esperando a que el ingress controller esté listo..."
     $KUBECTL wait --namespace ingress-nginx \
       --for=condition=ready pod \
@@ -83,7 +91,7 @@ deploy_dependencies() {
 # -----------------------------------------------------------------------------
 build_images() {
   info "Configurando Docker para minikube..."
-  eval $(minikube docker-env)
+  eval "$(minikube -p "$PROFILE" docker-env)"
   
   info "Construyendo imágenes (backend + frontend)..."
   SKIP_COMPONENTS=1 "$ROOT_DIR/build_all.sh"
@@ -117,7 +125,7 @@ deploy_app() {
 # -----------------------------------------------------------------------------
 configure_hosts() {
   local minikube_ip
-  minikube_ip=$(minikube ip)
+  minikube_ip=$(minikube -p "$PROFILE" ip)
   
   if grep -q "syntheticdata.local" /etc/hosts; then
     info "✓ syntheticdata.local ya configurado en /etc/hosts"
@@ -199,6 +207,7 @@ print_status() {
 # -----------------------------------------------------------------------------
 main() {
   info "=== Desplegando SyntheticDataSuite en Kubernetes ==="
+  info "Perfil minikube: $PROFILE"
   
   check_prerequisites
   enable_ingress

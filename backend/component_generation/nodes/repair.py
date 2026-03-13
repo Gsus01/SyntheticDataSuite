@@ -10,6 +10,10 @@ from component_generation.llm import LLMClient
 from component_generation.llm_trace import write_llm_request, write_llm_response
 from component_generation.schemas import GeneratedComponentFiles
 from component_generation.state import PipelineState
+from component_generation.validation import (
+    validate_generated_component_plan,
+    validate_generated_componentspec,
+)
 from component_spec import ComponentSpec
 from component_generation.nodes.developer import _write_session_scripts
 
@@ -69,6 +73,7 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
         }
 
         comp_plan = plan_components.get(comp_name) or {}
+        validate_generated_component_plan(comp_plan)
 
         system = load_prompt("repair_system.md")
         schema_hint = ""
@@ -125,7 +130,8 @@ def node_repair(state: PipelineState) -> Dict[str, object]:
 
         files = GeneratedComponentFiles.model_validate_json(raw)
         # validate ComponentSpec strictly
-        ComponentSpec.model_validate(files.componentspec)
+        spec = ComponentSpec.model_validate(files.componentspec)
+        validate_generated_componentspec(spec, component_name=comp_name)
 
         (folder / "main.py").write_text(files.main_py, encoding="utf-8")
         (folder / "Dockerfile").write_text(files.dockerfile, encoding="utf-8")

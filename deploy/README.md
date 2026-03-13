@@ -6,12 +6,13 @@
 MinIO se usará como nuestro repositorio de artefactos, es decir, el lugar donde Argo Workflows guardará las salidas y resultados de los flujos de trabajo.
 
 #### 1.1. Creación del Namespace y Pod de MinIO
-El fichero `minio-dev.yaml` se encarga de dos cosas:
-* **Namespace**: Crea un `Namespace` llamado `minio-dev`. Los namespaces en Kubernetes son una forma de organizar y aislar recursos.
-* **Pod**: Despliega un `Pod` de MinIO en el namespace `minio-dev`. Un Pod es la unidad de despliegue más pequeña en Kubernetes y contiene uno o más contenedores. Este Pod utiliza una imagen de MinIO y monta un volumen local de la máquina anfitriona (`/home/gsus/minio/`) para almacenar los datos de forma persistente.
+El despliegue de MinIO usa dos ficheros:
+* `namespace.yaml`: crea el `Namespace` `minio-dev`.
+* `minio-dev.yaml`: despliega el `Pod` de MinIO dentro de `minio-dev`. Este Pod utiliza una imagen de MinIO y monta un volumen local del nodo de Minikube (`/data/minio-dev`) para almacenar los datos de forma persistente en desarrollo.
 
-Para aplicar este fichero, ejecuta:
+Para aplicar el namespace y el pod, ejecuta:
 ```bash
+kubectl apply -f deploy/minio/namespace.yaml
 kubectl apply -f deploy/minio/minio-dev.yaml
 ```
 
@@ -48,7 +49,7 @@ kubectl apply -f deploy/argo/argo-workflow-rolebinding.yaml
 
 Por defecto, la interfaz de Argo Workflows requiere un token de autenticación para iniciar sesión. Para un entorno de desarrollo local como este, podemos cambiar el modo de autenticación a server para desactivar esta pantalla de login y acceder directamente.
 
-Aplica este parche para modificar la configuración del servidor de Argo:
+Aplica este parche para modificar la configuración del servidor de Argo, solo si todavía no tiene `--auth-mode=server`:
 
 ```bash
 kubectl -n argo patch deployment argo-server --type=json -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--auth-mode=server"}]'

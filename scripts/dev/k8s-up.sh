@@ -45,9 +45,25 @@ should_do() {
   [[ "$ONLY_COMPONENT" == "$comp" ]]
 }
 
+wait_for_default_service_account() {
+  local namespace="$1"
+  local attempts=0
+
+  info "Esperando a que Kubernetes cree el service account por defecto en $namespace..."
+  until kc -n "$namespace" get serviceaccount default >/dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    if (( attempts >= 30 )); then
+      warn "No apareció serviceaccount/default en $namespace dentro del tiempo esperado."
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 deploy_db() {
   info "Aplicando manifests de PostgreSQL..."
   kc apply -f "$ROOT_DIR/deploy/k8s/namespace.yaml"
+  wait_for_default_service_account syntheticdata
   kc apply -f "$ROOT_DIR/deploy/postgres/postgres.yaml"
 
   info "Esperando a que PostgreSQL esté listo..."
@@ -70,6 +86,12 @@ ensure_minikube() {
 
 deploy_minio() {
   info "Aplicando manifests de MinIO..."
+  kc apply -f "$ROOT_DIR/deploy/minio/namespace.yaml"
+  wait_for_default_service_account minio-dev
+
+  # MinIO corre como Pod suelto en dev; si cambia un campo inmutable
+  # (por ejemplo, hostPath) hay que recrearlo antes de aplicar.
+  kc -n minio-dev delete pod minio --ignore-not-found >/dev/null
   kc apply -f "$ROOT_DIR/deploy/minio/minio-dev.yaml"
   kc apply -f "$ROOT_DIR/deploy/minio/minio-service.yaml"
 
@@ -91,9 +113,13 @@ deploy_argo() {
   kc apply -f "$ROOT_DIR/deploy/argo/artifact-repository-configmap.yaml"
 
   info "Forzando modo de autenticación 'server' en argo-server (entorno dev)..."
-  kc -n argo patch deployment argo-server \
-    --type=json \
-    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--auth-mode=server"}]' || true
+  local argo_args
+  argo_args="$(kc -n argo get deployment argo-server -o jsonpath='{.spec.template.spec.containers[0].args[*]}' 2>/dev/null || true)"
+  if [[ " $argo_args " != *" --auth-mode=server "* ]]; then
+    kc -n argo patch deployment argo-server \
+      --type=json \
+      -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--auth-mode=server"}]'
+  fi
 
   info "Esperando a que Argo esté listo..."
   kc -n argo rollout status deployment/argo-server
@@ -124,5 +150,3 @@ main() {
 }
 
 main "$@"
-
-
