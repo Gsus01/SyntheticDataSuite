@@ -5,14 +5,18 @@ grounded in the SOURCE. Do not describe or propose backend/registry components.
 
 ## Goal
 - Read the SOURCE (notebook/code) and propose 1-5 components max.
-- Separate responsibilities (e.g. preprocessing -> training -> generation -> output).
+- Separate responsibilities (e.g. preprocessing -> training -> generation -> other).
 - Propose input/output **ports** with **real paths**.
 - Keep it pragmatic: only propose components that are clearly present in the SOURCE.
 
 Important:
 - The platform already provides a built-in **input data node**. Do **not**
   propose any component with `type: "input"`. Start from preprocessing/training/
-  generation/output components and use `/data/inputs/...` ports instead.
+  generation/other components and use `/data/inputs/...` ports instead.
+- The platform already provides a built-in **output node**. Do **not** propose
+  any component with `type: "output"`.
+- If the source contains evaluation, reporting, visualization, export, or
+  similar post-processing logic, classify it as `other`, not `output`.
 
 ## Output format rules (MANDATORY)
 - Return **one single JSON object** that matches the `ExtractionPlan` schema.
@@ -42,7 +46,7 @@ Config rule (critical):
 ## Naming
 - `name` in kebab-case (e.g. `hmm-trainer`)
 - `title` in human-readable text
-- `type`: preprocessing | training | generation | output | other
+- `type`: preprocessing | training | generation | other
 
 ## Example (notebook with HMM + synthetic generation)
 Valid output (summary):

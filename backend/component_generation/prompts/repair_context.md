@@ -27,11 +27,15 @@ COMMON FIXES
    - Ensure `runtime.command: ["python","main.py"]`
    - Ensure `runtime.imagePullPolicy: "Never"`
 
-3) Path rules:
+3) Forbidden component types:
+   - Generated components must never use `metadata.type: "input"` or `metadata.type: "output"`.
+   - If the component is evaluative/reporting/visualization oriented, use `other`.
+
+4) Path rules:
    - Inputs must be `/data/inputs/...` (or `/data/config/...` for config).
    - Outputs must be `/data/outputs/...`.
 
-4) main.py:
+5) main.py:
    - Ensure `--input-dir`, `--output-dir`, `--config-dir` exist with defaults.
    - Use `input_dir` to resolve input port paths.
    - Use `output_dir` to write outputs.

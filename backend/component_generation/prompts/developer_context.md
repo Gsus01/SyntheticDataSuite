@@ -34,6 +34,9 @@ Minimum required fields:
 Do NOT serialize JSON objects as strings:
 - `io.inputs` and `io.outputs` must be arrays of **objects**, not strings.
 - `parameters.defaults` must be a **JSON object**, not a string or list.
+- `metadata.type` must be one of: `preprocessing`, `training`, `generation`, `other`.
+- Never use `metadata.type: "output"` for generated components. The platform
+  already provides a built-in output node.
 
 Paths must be absolute under:
 - Inputs:  `/data/inputs/...`

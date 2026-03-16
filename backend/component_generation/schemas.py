@@ -6,11 +6,9 @@ from pydantic import BaseModel, Field
 
 
 ComponentType = Literal[
-    "input",
     "preprocessing",
     "training",
     "generation",
-    "output",
     "other",
 ]
 

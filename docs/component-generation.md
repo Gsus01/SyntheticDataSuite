@@ -110,6 +110,8 @@ backend/component_generation/
   - Calls LLM to generate a plan (`ExtractionPlan`).
   - Validates IO paths (inputs under `/data/inputs`, outputs under `/data/outputs`,
     config only under `/data/config` with role `config`).
+  - Rejects generated component types `input` and `output`; the workflow must
+    use the built-in input/output nodes instead.
   - Produces `plan.json` for review and HITL.
 
 - `backend/component_generation/nodes/hitl.py`
@@ -118,7 +120,8 @@ backend/component_generation/
 
 - `backend/component_generation/nodes/developer.py`
   - Calls LLM to generate `main.py`, `Dockerfile`, `ComponentSpec.json`.
-  - Strictly validates `ComponentSpec` before writing to disk.
+  - Strictly validates `ComponentSpec` before writing to disk, including
+    rejecting generated components with `metadata.type: "output"`.
 
 - `backend/component_generation/nodes/tester.py`
   - Validates generated outputs:

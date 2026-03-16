@@ -7,7 +7,6 @@ import {
   addEdge,
   Connection,
   DefaultEdgeOptions,
-  Edge,
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
@@ -32,6 +31,7 @@ import {
   type CatalogNodeTemplate,
 } from "@/lib/node-templates";
 import type {
+  FlowEdge,
   FlowNode,
   FlowNodeData,
   FlowNodePorts,
@@ -172,7 +172,7 @@ function sanitizeNodesForSave(nodes: FlowNode[]): unknown[] {
   });
 }
 
-function sanitizeEdgesForSave(edges: Edge[]): unknown[] {
+function sanitizeEdgesForSave(edges: FlowEdge[]): unknown[] {
   return edges.map((edge) => ({
     ...edge,
   }));
@@ -180,8 +180,8 @@ function sanitizeEdgesForSave(edges: Edge[]): unknown[] {
 
 function EditorInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { screenToFlowPosition } = useReactFlow<FlowNode, Edge>();
+  const [edges, setEdges, onEdgesChange] = useEdgesState<FlowEdge>([]);
+  const { screenToFlowPosition } = useReactFlow<FlowNode, FlowEdge>();
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [sessionId, setSessionId] = React.useState(() => generateSessionId());
   const [submitting, setSubmitting] = React.useState(false);
@@ -214,8 +214,8 @@ function EditorInner() {
   const statusAbortRef = React.useRef(false);
   const removedTemplatesSnapshotRef = React.useRef<{
     templateNames: string[];
-    nodes: Node<FlowNodeData>[];
-    edges: Edge[];
+    nodes: FlowNode[];
+    edges: FlowEdge[];
   } | null>(null);
   const isReadyToSend = Boolean(compiledState && !isCompileDirty);
   const showUnsyncedHint = Boolean(compiledState && isCompileDirty);
@@ -520,13 +520,13 @@ function EditorInner() {
   );
 
   const onConnect = useCallback(
-    (params: Edge | Connection) => {
+    (params: FlowEdge | Connection) => {
       setEdges((eds) =>
         addEdge(
           {
             ...params,
             markerEnd: { type: MarkerType.ArrowClosed },
-          } as Edge,
+          } as FlowEdge,
           eds
         )
       );
@@ -638,7 +638,7 @@ function EditorInner() {
   );
 
   const handleSelectionChange = useCallback(
-    ({ nodes: selected }: { nodes: FlowNode[]; edges: Edge[] }) => {
+    ({ nodes: selected }: { nodes: FlowNode[]; edges: FlowEdge[] }) => {
       if (selected.length) {
         setSelectedNodeId(selected[0].id);
       } else {
