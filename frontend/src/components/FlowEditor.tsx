@@ -1121,7 +1121,7 @@ function EditorInner() {
   }, [applyWorkflowStatus, cancelStatusPolling, submitResult]);
 
   return (
-    <div className="flex h-screen w-full bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-full w-full bg-gray-50 dark:bg-gray-900">
       <Sidebar
         onTemplatesDeleted={handleTemplatesDeleted}
         onTemplatesRestored={handleTemplatesRestored}

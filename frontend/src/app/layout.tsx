@@ -1,6 +1,7 @@
 import { ThemeProvider } from "@/lib/theme-context";
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import SponsorBar from "@/components/SponsorBar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,7 +37,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <div className="flex h-screen flex-col overflow-hidden">
+            <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+            <SponsorBar />
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );
