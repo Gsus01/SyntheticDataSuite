@@ -70,7 +70,19 @@ ensure_minikube() {
 
 deploy_minio() {
   info "Aplicando manifests de MinIO..."
-  kc apply -f "$ROOT_DIR/deploy/minio/minio-dev.yaml"
+  local apply_output
+  if ! apply_output=$(kc apply -f "$ROOT_DIR/deploy/minio/minio-dev.yaml" 2>&1); then
+    if [[ "$apply_output" == *"The Pod \"minio\" is invalid"* ]] && [[ "$apply_output" == *"Forbidden: pod updates may not change fields"* ]]; then
+      warn "El Pod de MinIO cambió en un campo inmutable; recreándolo..."
+      kc -n minio-dev delete pod minio --ignore-not-found --wait=true
+      kc apply -f "$ROOT_DIR/deploy/minio/minio-dev.yaml"
+    else
+      printf '%s\n' "$apply_output" >&2
+      return 1
+    fi
+  else
+    printf '%s\n' "$apply_output"
+  fi
   kc apply -f "$ROOT_DIR/deploy/minio/minio-service.yaml"
 
   info "Esperando a que el Pod de MinIO esté listo..."
@@ -124,5 +136,4 @@ main() {
 }
 
 main "$@"
-
 

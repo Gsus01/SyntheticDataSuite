@@ -1,3 +1,14 @@
+## Guía de despliegue manual
+
+> [!TIP]
+> Para el flujo habitual usa primero los atajos automatizados:
+> - `make dev` para desarrollo local
+> - `make k8s-deploy` para desplegar la aplicación completa en Kubernetes
+>
+> La guía rápida y actualizada está en `docs/dev-workflow.md`.
+
+Este documento queda como referencia de los pasos manuales que ejecutan esos scripts. Úsalo para entender el despliegue, depurar fallos o adaptar el proceso a otros entornos.
+
 ### Requisitos Previos
 * Tener instalado y corriendo `minikube`. Puedes iniciarlo con `minikube start`.
 * Tener instalado `kubectl`.
@@ -8,7 +19,7 @@ MinIO se usará como nuestro repositorio de artefactos, es decir, el lugar donde
 #### 1.1. Creación del Namespace y Pod de MinIO
 El fichero `minio-dev.yaml` se encarga de dos cosas:
 * **Namespace**: Crea un `Namespace` llamado `minio-dev`. Los namespaces en Kubernetes son una forma de organizar y aislar recursos.
-* **Pod**: Despliega un `Pod` de MinIO en el namespace `minio-dev`. Un Pod es la unidad de despliegue más pequeña en Kubernetes y contiene uno o más contenedores. Este Pod utiliza una imagen de MinIO y monta un volumen local de la máquina anfitriona (`/home/gsus/minio/`) para almacenar los datos de forma persistente.
+* **Pod**: Despliega un `Pod` de MinIO en el namespace `minio-dev`. Un Pod es la unidad de despliegue más pequeña en Kubernetes y contiene uno o más contenedores. Este Pod utiliza una imagen de MinIO y monta un volumen local del nodo de minikube (`/data/minio-dev`) para almacenar los datos de forma persistente.
 
 Para aplicar este fichero, ejecuta:
 ```bash
@@ -30,7 +41,7 @@ Ahora instalaremos Argo Workflows, el motor que orquestará nuestros flujos de t
 Primero, creamos un `Namespace` para Argo y luego aplicamos la configuración de instalación oficial.
 ```bash
 kubectl create namespace argo
-kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/latest/download/install.yaml
+kubectl apply -n argo -f https://github.com/argoproj/argo-workflows/releases/download/v3.7.4/install.yaml
 ```
 
 #### 2.2. Configuración de Roles y Permisos
